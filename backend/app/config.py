@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -32,11 +33,25 @@ class Settings(BaseSettings):
     zhihu_open_api_key: str = ""
     zhihu_search_backends: str = "brave-api,jina,brave,so360,bing"
     reader_base: str = "https://r.jina.ai"
+    # Third-party keys (un-prefixed names accepted for convenience; never logged)
+    jina_api_key: str = Field(default="", validation_alias=AliasChoices("JINA_API_KEY", "LEARNWAY_JINA_API_KEY"))
+    brave_search_api_key: str = Field(default="", validation_alias=AliasChoices("BRAVE_SEARCH_API_KEY", "LEARNWAY_BRAVE_SEARCH_API_KEY"))
     sources_per_node: int = 4
     fetch_full_text_per_node: int = 2
     grounding_concurrency: int = 2
     search_pause_seconds: float = 1.2
     http_timeout_seconds: float = 25.0
+
+    # Zhihu OAuth (测试状态 — see docs/zhihu-oauth.md)
+    public_origin: str = "http://127.0.0.1:8000"
+    session_secret: str = "change-me-in-production"
+    zhihu_oauth_client_id: str = ""
+    zhihu_oauth_client_secret: str = ""
+    zhihu_oauth_authorize_url: str = ""
+    zhihu_oauth_token_url: str = ""
+    zhihu_oauth_userinfo_url: str = ""
+    zhihu_oauth_scope: str = ""
+    zhihu_oauth_redirect_uri: str = ""  # defaults to {public_origin}/api/auth/zhihu/callback
 
     # Storage / serving
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'data' / 'learnway.db').as_posix()}"
@@ -61,6 +76,14 @@ class Settings(BaseSettings):
     @property
     def search_backend_list(self) -> list[str]:
         return [b.strip().lower() for b in self.zhihu_search_backends.split(",") if b.strip()]
+
+    @property
+    def zhihu_oauth_enabled(self) -> bool:
+        return bool(self.zhihu_oauth_client_id and self.zhihu_oauth_authorize_url and self.zhihu_oauth_token_url)
+
+    @property
+    def resolved_redirect_uri(self) -> str:
+        return self.zhihu_oauth_redirect_uri or f"{self.public_origin.rstrip('/')}/api/auth/zhihu/callback"
 
     @property
     def cors_origin_list(self) -> list[str]:

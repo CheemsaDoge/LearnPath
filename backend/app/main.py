@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.auth import router as auth_router
 from app.api.routes import router
 from app.config import get_settings
 from app.db import init_db
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="知径 LearnWay API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     app.include_router(router)
+    app.include_router(auth_router)
 
     dist = Path(settings.frontend_dist)
     if (dist / "index.html").exists():

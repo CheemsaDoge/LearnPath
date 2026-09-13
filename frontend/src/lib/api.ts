@@ -1,4 +1,4 @@
-import type { Card, Graph, GoalInput, Health, HotItem, NodeDetail, Quiz, QuizResult } from "./types";
+import type { AuthStatus, Card, Graph, GoalInput, Health, HotItem, NodeDetail, Quiz, QuizResult } from "./types";
 
 const BASE = "/api";
 
@@ -31,6 +31,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<Health>("/health"),
+  auth: () => request<AuthStatus>("/auth/me"),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+  loginUrl: (next = "/") => `${BASE}/auth/zhihu/login?next=${encodeURIComponent(next)}`,
   hot: () => request<HotItem[]>("/hot"),
   createGoal: (input: GoalInput) => request<{ graph_id: string; goal_id: string; status: string }>("/goals", { method: "POST", body: JSON.stringify(input) }),
   listGraphs: () => request<Graph[]>("/graphs"),

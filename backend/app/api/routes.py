@@ -124,6 +124,7 @@ def health() -> HealthOut:
         zhihu_search=settings.search_backend_list,
         zhihu_official=get_official().configured,
         reader=settings.reader_base,
+        zhihu_oauth="enabled(test)" if settings.zhihu_oauth_enabled else "disabled",
     )
 
 

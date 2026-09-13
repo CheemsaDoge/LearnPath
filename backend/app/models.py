@@ -186,3 +186,32 @@ class KVCache(Base):
     key: Mapped[str] = mapped_column(String(600), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class User(Base):
+    """A learner identity from an external OAuth provider (currently Zhihu, 测试状态)."""
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("provider", "provider_uid", name="uq_user_provider"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("u_"))
+    provider: Mapped[str] = mapped_column(String(32), default="zhihu")
+    provider_uid: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(120), default="")
+    avatar: Mapped[str] = mapped_column(String(500), default="")
+    headline: Mapped[str] = mapped_column(String(300), default="")
+    profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    last_login_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class LoginSession(Base):
+    __tablename__ = "login_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    access_token: Mapped[str] = mapped_column(Text, default="")
+    expires_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    user: Mapped[User] = relationship()

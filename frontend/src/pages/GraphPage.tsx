@@ -2,6 +2,7 @@ import { AlertTriangle, ChevronRight, Download, Loader2, RefreshCw, Sparkles } f
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { GraphCanvas } from "../components/graph/GraphCanvas";
+import { AuthMenu } from "../components/AuthMenu";
 import { Logo } from "../components/Logo";
 import { NodePanel } from "../components/panel/NodePanel";
 import { api, formatMinutes, rememberGraph } from "../lib/api";
@@ -112,6 +113,7 @@ export function GraphPage() {
         <a href={api.exportUrl(graph.id)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:border-brand-300 hover:text-brand-700" title="导出 Markdown 学习清单">
           <Download size={14} /> 导出
         </a>
+        <AuthMenu />
       </header>
 
       {(generating || grounding || failed) && (

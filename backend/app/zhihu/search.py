@@ -26,6 +26,18 @@ class SearchBackendError(RuntimeError):
     pass
 
 
+_KEYS: dict[str, str] = {}
+
+
+def configure_keys(**keys: str) -> None:
+    """Register API keys for keyed backends (called once from app wiring; env vars remain a fallback)."""
+    _KEYS.update({k: v for k, v in keys.items() if v})
+
+
+def _key(name: str) -> str:
+    return _KEYS.get(name) or os.environ.get(name, "")
+
+
 def _ensure_site_filter(query: str) -> str:
     return query if "site:zhihu.com" in query else f"site:zhihu.com {query}"
 
@@ -145,7 +157,7 @@ def so360_search(query: str, timeout: float = 25.0) -> list[SearchHit]:
 
 # --------------------------------------------------------------------------- Brave Search API (key)
 def brave_api_search(query: str, timeout: float = 25.0) -> list[SearchHit]:
-    key = os.environ.get("BRAVE_SEARCH_API_KEY", "")
+    key = _key("BRAVE_SEARCH_API_KEY")
     if not key:
         raise SearchBackendError("BRAVE_SEARCH_API_KEY not set")
     with httpx.Client(timeout=timeout) as client:
@@ -164,7 +176,7 @@ def brave_api_search(query: str, timeout: float = 25.0) -> list[SearchHit]:
 
 # --------------------------------------------------------------------------- Jina Search (key; returns page text too)
 def jina_search(query: str, timeout: float = 60.0) -> list[SearchHit]:
-    key = os.environ.get("JINA_API_KEY", "")
+    key = _key("JINA_API_KEY")
     if not key:
         raise SearchBackendError("JINA_API_KEY not set")
     with httpx.Client(timeout=timeout) as client:
@@ -193,7 +205,7 @@ KEYED_BACKENDS = {"brave-api": "BRAVE_SEARCH_API_KEY", "jina": "JINA_API_KEY"}
 
 def available_backends(names: list[str]) -> list[str]:
     """Drop keyed backends whose key is missing so callers don't waste a round-trip."""
-    return [n for n in names if n in BACKENDS and (n not in KEYED_BACKENDS or os.environ.get(KEYED_BACKENDS[n]))]
+    return [n for n in names if n in BACKENDS and (n not in KEYED_BACKENDS or _key(KEYED_BACKENDS[n]))]
 
 
 # --------------------------------------------------------------------------- facade

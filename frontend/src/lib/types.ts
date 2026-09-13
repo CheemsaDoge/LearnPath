@@ -175,6 +175,7 @@ export interface Health {
   zhihu_search: string[];
   zhihu_official: boolean;
   reader: string;
+  zhihu_oauth: string;
 }
 
 export interface GoalInput {
@@ -182,4 +183,20 @@ export interface GoalInput {
   background?: string;
   time_budget?: string;
   purpose?: string;
+}
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  avatar: string;
+  headline: string;
+  provider: string;
+}
+
+export interface AuthStatus {
+  enabled: boolean;
+  stage: string;
+  provider: string;
+  login_url: string | null;
+  user: AuthUser | null;
 }

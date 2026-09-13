@@ -261,3 +261,4 @@ class HealthOut(BaseModel):
     zhihu_search: list[str]
     zhihu_official: bool
     reader: str
+    zhihu_oauth: str = "disabled"

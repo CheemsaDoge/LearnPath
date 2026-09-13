@@ -103,6 +103,10 @@ cd frontend && npm install && npm run dev      # http://127.0.0.1:5173
 
 所有检索结果与页面正文都会缓存在 SQLite（`backend/data/learnway.db`），重复演示不再发网络请求。
 
+### 知乎账号登录（OAuth，测试状态）
+
+支持用知乎账号登录（标准 OAuth 2.0 授权码流程），端点与 client 全部走配置；未配置时登录入口自动隐藏。配置项、接口、字段映射与待确认清单见 [docs/zhihu-oauth.md](docs/zhihu-oauth.md)。
+
 ## 技术架构
 
 ```text
@@ -118,6 +122,7 @@ backend/   FastAPI + SQLAlchemy(SQLite WAL) + Anthropic SDK
            ├─ services/grounding       每个知识点：检索 → 去重 → 读取全文 → 关联来源（线程池 + 缓存）
            ├─ services/learning        讲解 / 出题 / 费曼评分 / 卡片 / 答疑 / Markdown 导出
            ├─ services/progress        掌握度星级 · 前置解锁 · 下一步推荐（G-R-E-M-A 的 M 与 A）
+           ├─ services/oauth           知乎 OAuth 授权码流程（测试状态）· 签名 state · 会话
            ├─ llm/                     Provider 抽象：Anthropic（官方 SDK）· OpenAI 兼容 · Mock
            └─ zhihu/                   official（开放平台）· search（Brave/Bing site:zhihu.com）· reader（Jina）· hot（热榜）
 ```
@@ -144,6 +149,7 @@ backend/   FastAPI + SQLAlchemy(SQLite WAL) + Anthropic SDK
 | POST | `/api/nodes/{id}/chat` | SSE 流式追问 |
 | POST | `/api/nodes/{id}/ground` | 重新检索该知识点的知乎来源 |
 | GET | `/api/hot` | 知乎热榜 |
+| GET/POST | `/api/auth/me` · `/api/auth/zhihu/login` · `/api/auth/zhihu/callback` · `/api/auth/logout` | 知乎 OAuth 登录（测试状态，见 docs/zhihu-oauth.md） |
 | GET | `/api/health` | 运行状态 |
 
 ## 测试

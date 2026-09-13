@@ -1,6 +1,7 @@
 import { ArrowRight, Flame, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AuthMenu } from "../components/AuthMenu";
 import { Logo } from "../components/Logo";
 import { api, ApiError, rememberGraph } from "../lib/api";
 import type { Graph, Health, HotItem } from "../lib/types";
@@ -63,6 +64,7 @@ export function Home() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Logo />
         <div className="flex items-center gap-3 text-xs text-slate-500">
+          <AuthMenu />
           {health && (
             <span className={`rounded-full px-2 py-0.5 ${health.llm_provider === "mock" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
               {health.llm_provider === "mock" ? "离线演示模式" : `模型：${health.llm_model}`}
