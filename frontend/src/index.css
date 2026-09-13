@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@theme {
+  --color-brand-50: #eef5ff;
+  --color-brand-100: #d9e8ff;
+  --color-brand-200: #b6d1ff;
+  --color-brand-300: #85b2ff;
+  --color-brand-400: #4d8bff;
+  --color-brand-500: #0f6fff;
+  --color-brand-600: #0a5be0;
+  --color-brand-700: #0a48b3;
+  --color-paper: #f7f8fa;
+  --color-ink: #1a1f2b;
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-paper text-ink antialiased; }
+
+.prose-learn h1 { @apply text-xl font-bold mt-5 mb-2; }
+.prose-learn h2 { @apply text-lg font-bold mt-5 mb-2; }
+.prose-learn h3 { @apply text-base font-semibold mt-4 mb-1.5; }
+.prose-learn p { @apply leading-7 my-2 text-[15px]; }
+.prose-learn ul { @apply list-disc pl-5 my-2 space-y-1; }
+.prose-learn ol { @apply list-decimal pl-5 my-2 space-y-1; }
+.prose-learn li { @apply leading-7 text-[15px]; }
+.prose-learn code { @apply bg-slate-100 rounded px-1 py-0.5 text-[13px] font-mono; }
+.prose-learn pre { @apply bg-slate-900 text-slate-50 rounded-lg p-3 overflow-x-auto text-[13px] my-3; }
+.prose-learn pre code { @apply bg-transparent p-0 text-inherit; }
+.prose-learn blockquote { @apply border-l-4 border-brand-200 bg-brand-50/60 pl-3 py-1 my-3 text-slate-700 rounded-r; }
+.prose-learn table { @apply w-full text-sm my-3 border-collapse; }
+.prose-learn th, .prose-learn td { @apply border border-slate-200 px-2 py-1 text-left; }
+.prose-learn a { @apply text-brand-600 underline decoration-brand-200 underline-offset-2; }
+.prose-learn strong { @apply font-semibold text-ink; }
+.cite, .prose-learn a.cite { @apply inline-flex items-center justify-center min-w-[1.35rem] h-[1.15rem] px-1 mx-0.5 rounded-full bg-brand-100 text-brand-700 text-[11px] font-semibold align-middle no-underline; }
+.prose-learn a.cite:hover { @apply bg-brand-200; }
+
+.react-flow__attribution { display: none; }
+.react-flow__node { cursor: pointer; }
+
+@keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
