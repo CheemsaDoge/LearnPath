@@ -23,8 +23,8 @@ await page.waitForTimeout(1500);
 await shot("02-generating");
 
 // wait until the graph is ready (status banner disappears) — up to 4 minutes
-await page.waitForFunction(() => !document.body.innerText.includes("正在") || document.querySelectorAll(".react-flow__node").length > 5, null, { timeout: 240000 });
-await page.waitForFunction(() => !document.body.innerText.includes("正在知乎上") && !document.body.innerText.includes("正在读取"), null, { timeout: 240000 });
+await page.waitForFunction(() => !document.body.innerText.includes("正在") || document.querySelectorAll(".react-flow__node").length > 5, null, { timeout: 720000 });
+await page.waitForFunction(() => !document.body.innerText.includes("正在知乎上") && !document.body.innerText.includes("正在读取"), null, { timeout: 720000 });
 await page.waitForTimeout(1500);
 await shot("03-graph");
 

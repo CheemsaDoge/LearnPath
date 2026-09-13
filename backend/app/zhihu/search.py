@@ -253,9 +253,11 @@ class ZhihuSearch:
     def search(self, query: str, limit: int = 6) -> list[SearchHit]:
         if self.official is not None and self.official.configured:
             try:
-                hits = self.official.search(query, limit=limit)
-                if hits:
-                    return normalize_hits(hits, limit)
+                hits = self.official.search(query, limit=min(limit, 10))
+                normalized = normalize_hits(hits, limit)
+                if normalized:
+                    return normalized
+                log.info("official zhihu search returned no usable hits for %r; falling back", query)
             except Exception as exc:  # pragma: no cover - depends on external service
                 log.warning("official zhihu search failed (%s); falling back to web search", exc)
         errors: list[str] = []

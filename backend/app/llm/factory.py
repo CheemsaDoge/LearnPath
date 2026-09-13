@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
 from app.config import get_settings
@@ -15,9 +14,16 @@ def get_llm() -> LLMProvider:
     settings = get_settings()
     provider = settings.resolved_llm_provider
     if provider == "anthropic":
-        return AnthropicProvider(model=settings.anthropic_model, betas=settings.anthropic_beta_list, timeout=settings.llm_timeout_seconds)
+        return AnthropicProvider(
+            model=settings.anthropic_model,
+            betas=settings.anthropic_beta_list,
+            timeout=settings.llm_timeout_seconds,
+            api_key=settings.anthropic_api_key or None,
+            auth_token=settings.anthropic_auth_token or None,
+            base_url=settings.anthropic_base_url or None,
+        )
     if provider == "openai":
-        return OpenAICompatibleProvider(model=settings.openai_model, base_url=os.environ.get("OPENAI_BASE_URL"), api_key=os.environ.get("OPENAI_API_KEY"), timeout=settings.llm_timeout_seconds)
+        return OpenAICompatibleProvider(model=settings.openai_model, base_url=settings.openai_base_url or None, api_key=settings.openai_api_key or None, timeout=settings.llm_timeout_seconds)
     return MockProvider()
 
 

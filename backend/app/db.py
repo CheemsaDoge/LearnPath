@@ -52,10 +52,33 @@ def session_factory() -> sessionmaker[Session]:
     return _SessionLocal
 
 
+_ADDITIVE_COLUMNS = {
+    "goals": {"user_id": "VARCHAR(32)", "clarifications": "JSON DEFAULT '[]'", "attachment_ids": "JSON DEFAULT '[]'"},
+    "graphs": {"user_id": "VARCHAR(32)"},
+}
+
+
+def ensure_columns(engine) -> None:
+    """SQLite has no migration tool here; add new nullable columns to tables created by older versions."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table, columns in _ADDITIVE_COLUMNS.items():
+            if table not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
 def init_db() -> None:
     from app import models  # noqa: F401  (register tables)
 
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    ensure_columns(engine)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -74,3 +97,4 @@ def reset_engine_for_tests(url: str) -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(_engine)
+    ensure_columns(_engine)

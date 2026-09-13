@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import time
 import urllib.parse
@@ -20,8 +21,8 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.models import LoginSession, User, utcnow
 
-SESSION_COOKIE = "learnway_session"
-STATE_COOKIE = "learnway_oauth_state"
+SESSION_COOKIE = "learnpath_session"
+STATE_COOKIE = "learnpath_oauth_state"
 SESSION_TTL = timedelta(days=30)
 STATE_TTL_SECONDS = 600
 
@@ -68,26 +69,25 @@ def verify_state(settings: Settings, state: str) -> str:
 
 # ----------------------------------------------------------------------------- provider calls
 def authorize_url(settings: Settings, state: str) -> str:
+    """https://openapi.zhihu.com/authorize?redirect_uri=…&app_id=…&response_type=code&state=…"""
     params = {
-        "response_type": "code",
-        "client_id": settings.zhihu_oauth_client_id,
         "redirect_uri": settings.resolved_redirect_uri,
+        "app_id": settings.zhihu_oauth_app_id,
+        "response_type": "code",
         "state": state,
     }
-    if settings.zhihu_oauth_scope:
-        params["scope"] = settings.zhihu_oauth_scope
     sep = "&" if "?" in settings.zhihu_oauth_authorize_url else "?"
     return settings.zhihu_oauth_authorize_url + sep + urllib.parse.urlencode(params)
 
 
 def exchange_code(settings: Settings, code: str, timeout: float = 20.0) -> dict[str, Any]:
-    """Authorization code → token response (dict with at least `access_token`)."""
+    """POST /access_token (form) → {access_token, token_type, expires_in}. Zhihu may add a business `code: 20000` on success."""
     data = {
+        "app_id": settings.zhihu_oauth_app_id,
+        "app_key": settings.zhihu_oauth_app_key,
         "grant_type": "authorization_code",
-        "code": code,
         "redirect_uri": settings.resolved_redirect_uri,
-        "client_id": settings.zhihu_oauth_client_id,
-        "client_secret": settings.zhihu_oauth_client_secret,
+        "code": code,
     }
     try:
         with httpx.Client(timeout=timeout) as client:
@@ -118,8 +118,13 @@ def fetch_profile(settings: Settings, token: str, timeout: float = 20.0) -> dict
         raise OAuthError(f"无法获取用户信息：{exc}") from exc
     if resp.status_code >= 400:
         raise OAuthError(f"获取用户信息失败 ({resp.status_code}): {resp.text[:200]}")
-    payload = resp.json()
-    return payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else payload
+    # `uid` is int64 and may exceed 2^53: keep it lossless by parsing big ints as strings.
+    payload = json.loads(resp.text, parse_int=lambda v: v if len(v) > 15 else int(v))
+    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+    if isinstance(payload, dict) and isinstance(payload.get("data"), str) and payload.get("code") not in (None, 0, 20000):
+        raise OAuthError(f"获取用户信息失败 ({payload.get('code')}): {payload['data'][:120]}")  # e.g. {"code":401,"data":"Access token is not valid"}
+    return payload
 
 
 def normalize_profile(raw: dict[str, Any], fallback_uid: str = "") -> dict[str, str]:
@@ -133,10 +138,10 @@ def normalize_profile(raw: dict[str, Any], fallback_uid: str = "") -> dict[str, 
         return ""
 
     return {
-        "uid": pick("id", "uid", "open_id", "openid", "url_token", "user_id") or fallback_uid,
-        "name": pick("name", "nickname", "screen_name", "username") or "知乎用户",
-        "avatar": pick("avatar_url", "avatar", "avatar_url_template", "head_url"),
-        "headline": pick("headline", "bio", "description"),
+        "uid": pick("uid", "hash_id", "id", "open_id", "user_id") or fallback_uid,
+        "name": pick("fullname", "name", "nickname", "screen_name") or "知乎用户",
+        "avatar": pick("avatar_path", "avatar_url", "avatar"),
+        "headline": pick("headline", "description", "bio"),
     }
 
 

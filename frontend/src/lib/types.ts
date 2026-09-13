@@ -54,6 +54,7 @@ export interface Graph {
   status: GraphStatus;
   error: string;
   progress: { step?: string; done?: number; total?: number };
+  degraded?: boolean;
   created_at: string;
   goal_text: string;
   nodes: GraphNode[];
@@ -166,6 +167,7 @@ export interface HotItem {
   url: string;
   answer_count: number;
   follower_count: number;
+  thumbnail?: string;
 }
 
 export interface Health {
@@ -176,6 +178,12 @@ export interface Health {
   zhihu_official: boolean;
   reader: string;
   zhihu_oauth: string;
+  zhida: boolean;
+}
+
+export interface ClarifyAnswer {
+  question: string;
+  answer: string;
 }
 
 export interface GoalInput {
@@ -183,6 +191,73 @@ export interface GoalInput {
   background?: string;
   time_budget?: string;
   purpose?: string;
+  answers?: ClarifyAnswer[];
+  attachment_ids?: string[];
+}
+
+export interface ClarifyQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  multiple: boolean;
+  why: string;
+}
+
+export interface ClarifyOut {
+  intro: string;
+  questions: ClarifyQuestion[];
+  profile_hint: string;
+}
+
+export interface Me {
+  id: string;
+  name: string;
+  avatar: string;
+  headline: string;
+  provider: string;
+  is_guest: boolean;
+  created_at: string;
+}
+
+export type FactKind = "background" | "skill" | "goal" | "preference" | "interest" | "progress" | "other";
+
+export interface ProfileFact {
+  id: string;
+  kind: FactKind;
+  text: string;
+  source: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ProfileEvent {
+  id: string;
+  kind: string;
+  summary: string;
+  ref_type: string;
+  ref_id: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Attachment {
+  id: string;
+  graph_id: string | null;
+  filename: string;
+  content_type: string;
+  size: number;
+  has_text: boolean;
+  summary: string;
+  created_at: string;
+}
+
+export interface Dashboard {
+  user: Me;
+  facts: ProfileFact[];
+  events: ProfileEvent[];
+  graphs: Graph[];
+  attachments: Attachment[];
+  stats: { graphs: number; learnable_nodes: number; mastered_nodes: number; started_nodes: number; minutes_learned: number; events: number; facts: number };
 }
 
 export interface AuthUser {

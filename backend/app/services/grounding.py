@@ -52,7 +52,7 @@ def _safe_fetch(reader: PageReader, url: str) -> PageContent:
 def upsert_source(db: Session, hit: SearchHit) -> Source:
     source = db.query(Source).filter(Source.url == hit.url).one_or_none()
     if source is None:
-        source = Source(url=hit.url, kind=hit.kind, title=hit.title, snippet=hit.snippet, origin="official" if hit.backend == "official" else "web")
+        source = Source(url=hit.url, kind=hit.kind, title=hit.title, snippet=hit.snippet, origin="official" if hit.backend == "official" else "web", votes=hit.votes, author=hit.author, meta=dict(hit.meta or {}))
         db.add(source)
         db.flush()
     else:
@@ -60,6 +60,13 @@ def upsert_source(db: Session, hit: SearchHit) -> Source:
             source.title = hit.title
         if hit.snippet and len(hit.snippet) > len(source.snippet or ""):
             source.snippet = hit.snippet
+        if hit.votes and not source.votes:
+            source.votes = hit.votes
+        if hit.author and not source.author:
+            source.author = hit.author
+        if hit.backend == "official":
+            source.origin = "official"
+            source.meta = {**(source.meta or {}), **(hit.meta or {})}
     return source
 
 
@@ -80,7 +87,7 @@ def ground_nodes(
     """Ground a batch of nodes. Returns ``{node_id: number_of_sources}``."""
     report = on_progress or (lambda *_: None)
     limit = settings.sources_per_node
-    workers = max(1, settings.grounding_concurrency)
+    workers = max(1, settings.effective_grounding_concurrency)
 
     # ---- phase A: searches (cache first, then network in parallel).
     # Round 1 uses each node's best query; round 2 only re-queries nodes that came back thin,

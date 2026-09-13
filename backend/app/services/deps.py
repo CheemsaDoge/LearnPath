@@ -11,7 +11,7 @@ from app.zhihu.search import ZhihuSearch, configure_keys
 @lru_cache
 def get_official() -> ZhihuOpenPlatform:
     s = get_settings()
-    return ZhihuOpenPlatform(base=s.zhihu_open_api_base, api_key=s.zhihu_open_api_key, timeout=s.http_timeout_seconds)
+    return ZhihuOpenPlatform(access_secret=s.zhihu_access_secret, timeout=s.http_timeout_seconds)
 
 
 @lru_cache

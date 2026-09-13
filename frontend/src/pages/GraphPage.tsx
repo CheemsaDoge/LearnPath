@@ -1,11 +1,11 @@
-import { AlertTriangle, ChevronRight, Download, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, LayoutDashboard, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { GraphCanvas } from "../components/graph/GraphCanvas";
 import { AuthMenu } from "../components/AuthMenu";
 import { Logo } from "../components/Logo";
 import { NodePanel } from "../components/panel/NodePanel";
-import { api, formatMinutes, rememberGraph } from "../lib/api";
+import { api, ApiError, formatMinutes, rememberGraph } from "../lib/api";
 import type { Graph } from "../lib/types";
 
 const STEP_TEXT: Record<string, string> = {
@@ -21,43 +21,71 @@ export function GraphPage() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [autoRetrying, setAutoRetrying] = useState(false);
   const timer = useRef<number | null>(null);
+  const failures = useRef(0);
+  const autoRetried = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const g = await api.getGraph(graphId);
       setGraph(g);
       setError(null);
+      failures.current = 0;
       return g;
     } catch (e) {
-      setError((e as Error).message);
+      const status = e instanceof ApiError ? e.status : 0;
+      failures.current += 1;
+      // a 404 is final; anything else is treated as transient and polled again before we show an error page
+      if (status === 404 || failures.current >= 6) setError(status === 404 ? "这条学习路径不存在或已被删除" : "服务暂时不可用，请稍后刷新页面");
       return null;
     }
   }, [graphId]);
 
-  useEffect(() => {
-    rememberGraph(graphId);
-    let cancelled = false;
+  const startPolling = useCallback(() => {
+    if (timer.current) window.clearTimeout(timer.current);
     const tick = async () => {
       const g = await load();
-      if (cancelled) return;
-      if (g && (g.status === "generating" || g.status === "grounding")) timer.current = window.setTimeout(tick, 1500);
+      const busy = !g || g.status === "generating" || g.status === "grounding";
+      if (g && g.status === "failed" && !autoRetried.current) {
+        // silent, one-time automatic retry — the user should not have to press a button for a transient failure
+        autoRetried.current = true;
+        setAutoRetrying(true);
+        try {
+          await api.retryGraph(graphId);
+        } catch {
+          /* fall through to polling; the banner will show the error */
+        }
+        timer.current = window.setTimeout(tick, 1500);
+        return;
+      }
+      if (g && g.status !== "failed") setAutoRetrying(false);
+      if (busy && failures.current < 6) timer.current = window.setTimeout(tick, g ? 1500 : 2500);
     };
     tick();
-    return () => {
-      cancelled = true;
-      if (timer.current) window.clearTimeout(timer.current);
-    };
   }, [graphId, load]);
 
+  useEffect(() => {
+    rememberGraph(graphId);
+    failures.current = 0;
+    autoRetried.current = false;
+    startPolling();
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    };
+  }, [graphId, startPolling]);
+
   const retry = async () => {
-    await api.retryGraph(graphId);
     setSelected(null);
-    const g = await load();
-    if (g && g.status !== "ready") timer.current = window.setTimeout(async function tick() {
-      const gg = await load();
-      if (gg && (gg.status === "generating" || gg.status === "grounding")) timer.current = window.setTimeout(tick, 1500);
-    }, 1500);
+    setAutoRetrying(true);
+    try {
+      await api.retryGraph(graphId);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "重试失败");
+      return;
+    }
+    autoRetried.current = true;
+    startPolling();
   };
 
   if (error) {
@@ -78,9 +106,9 @@ export function GraphPage() {
       </div>
     );
 
-  const generating = graph.status === "generating";
+  const generating = graph.status === "generating" || (graph.status === "failed" && autoRetrying);
   const grounding = graph.status === "grounding";
-  const failed = graph.status === "failed";
+  const failed = graph.status === "failed" && !autoRetrying;
   const progress = graph.progress ?? {};
   const pct = progress.total ? Math.round(((progress.done ?? 0) / progress.total) * 100) : 0;
   const stats = graph.stats;
@@ -113,13 +141,16 @@ export function GraphPage() {
         <a href={api.exportUrl(graph.id)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:border-brand-300 hover:text-brand-700" title="导出 Markdown 学习清单">
           <Download size={14} /> 导出
         </a>
+        <Link to="/dashboard" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:border-brand-300 hover:text-brand-700" title="控制台">
+          <LayoutDashboard size={14} /> 控制台
+        </Link>
         <AuthMenu />
       </header>
 
       {(generating || grounding || failed) && (
         <div className={`flex items-center gap-3 px-4 py-2 text-sm ${failed ? "bg-rose-50 text-rose-700" : "bg-brand-50 text-brand-800"}`}>
           {failed ? <AlertTriangle size={16} /> : <Loader2 size={16} className="animate-spin" />}
-          <span className="flex-1 truncate">{failed ? graph.error || "生成失败" : STEP_TEXT[progress.step ?? "plan"] ?? "处理中…"}</span>
+          <span className="flex-1 truncate">{failed ? "生成遇到问题，已自动重试仍未成功。可以再试一次，或换一种说法描述目标。" : autoRetrying && graph.status === "failed" ? "生成遇到波动，正在自动重试…" : STEP_TEXT[progress.step ?? "plan"] ?? "处理中…"}</span>
           {!failed && progress.total ? <span className="text-xs">{pct}%</span> : null}
           {failed && (
             <button onClick={retry} className="inline-flex items-center gap-1 rounded-md border border-rose-300 px-2 py-1 text-xs hover:bg-rose-100">
@@ -129,6 +160,15 @@ export function GraphPage() {
         </div>
       )}
 
+      {graph.degraded && graph.status === "ready" && (
+        <div className="flex items-center gap-3 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <Sparkles size={16} />
+          <span className="flex-1 truncate">AI 服务刚才有波动，这是自动生成的基础路线；知乎来源是真实的。想要完整的个性化路线可以重新生成。</span>
+          <button onClick={retry} className="inline-flex items-center gap-1 rounded-md border border-amber-300 px-2 py-1 text-xs hover:bg-amber-100">
+            <RefreshCw size={12} /> 重新生成
+          </button>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
           {graph.nodes.length > 0 ? (
@@ -136,7 +176,7 @@ export function GraphPage() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-400">
               {!failed && <Loader2 className="animate-spin" />}
-              <p className="text-sm">{failed ? "没有生成任何节点" : "正在生成知识图谱，通常需要 20-60 秒…"}</p>
+              <p className="text-sm">{failed ? "没有生成任何节点" : "正在生成知识图谱，通常需要 1-3 分钟…"}</p>
             </div>
           )}
           {graph.summary && !selected && graph.nodes.length > 0 && (

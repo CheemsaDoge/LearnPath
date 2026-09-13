@@ -9,8 +9,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.llm.base import LLMError, LLMProvider
+from app.llm.resilience import call_with_retries, is_retryable
+from app.services.fallbacks import DEGRADED_NOTE, fallback_cards, fallback_grade, fallback_lesson, fallback_quiz
 from app.models import CardDeck, ChatMessage, Evidence, Graph, Lesson, Node, Quiz, utcnow
 from app.schemas import LLMCards, LLMGrade, LLMQuiz, NextAction, QuestionResult, QuizResultOut
+from app.services import profile as profile_service
 from app.services.grounding import source_context
 from app.services.progress import GraphProgress, update_mastery
 from app.services.prompts import (
@@ -38,9 +41,11 @@ class LearningService:
         graph = node.graph
         parent = self.db.get(Node, node.parent_id) if node.parent_id else None
         context, citations = source_context(node)
+        facts = profile_service.profile_context(self.db, graph.user_id)
+        learner = graph.learner_profile + ("\n学习者档案：\n" + facts if facts else "")
         return {
             "parent_label": parent.label if parent and parent.node_type != "root" else "",
-            "learner_profile": graph.learner_profile,
+            "learner_profile": learner,
             "goal_text": graph.goal.raw_goal,
             "context": context,
             "citations": citations,
@@ -54,13 +59,27 @@ class LearningService:
         ctx = self._ctx(node)
         yield {"citations": ctx["citations"]}
         chunks: list[str] = []
-        for delta in self.llm.stream(
-            system=LESSON_SYSTEM,
-            messages=[{"role": "user", "content": build_lesson_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"])}],
-            max_tokens=6000,
-        ):
-            chunks.append(delta)
-            yield {"delta": delta}
+        degraded = False
+        messages = [{"role": "user", "content": build_lesson_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"])}]
+        for attempt in range(3):
+            try:
+                for delta in self.llm.stream(system=LESSON_SYSTEM, messages=messages, max_tokens=6000):
+                    chunks.append(delta)
+                    yield {"delta": delta}
+                break
+            except LLMError as exc:
+                if chunks or not is_retryable(exc) or attempt == 2:
+                    if chunks:  # partial answer: keep what we have, tell the reader
+                        tail = "\n\n" + DEGRADED_NOTE
+                        chunks.append(tail)
+                        yield {"delta": tail}
+                    else:
+                        text = fallback_lesson(node, ctx["context"], ctx["citations"])
+                        chunks.append(text)
+                        yield {"delta": text}
+                    degraded = True
+                    break
+                yield {"status": f"模型响应波动，正在重试（{attempt + 2}/3）…"}
         content = "".join(chunks).strip()
         for old in list(node.lessons):
             self.db.delete(old)
@@ -69,18 +88,26 @@ class LearningService:
         node.last_studied_at = utcnow()
         self.db.add(Evidence(node_id=node.id, kind="lesson", score=0.0, detail={"chars": len(content), "sources": len(ctx["citations"])}))
         self.db.commit()
-        yield {"done": True, "lesson_id": lesson.id}
+        profile_service.record_event(self.db, node.graph.user_id, "lesson", f"学习了「{node.label}」的讲解（引用 {len(ctx['citations'])} 篇知乎来源）", "node", node.id)
+        yield {"done": True, "lesson_id": lesson.id, "degraded": degraded}
 
     # ------------------------------------------------------------------ quiz
     def generate_quiz(self, node: Node) -> Quiz:
         ctx = self._ctx(node)
-        plan: LLMQuiz = self.llm.structured(
-            system=QUIZ_SYSTEM,
-            user=build_quiz_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"]),
-            schema=LLMQuiz,
-            effort="medium",
-            max_tokens=6000,
-        )
+        try:
+            plan: LLMQuiz = call_with_retries(
+                lambda: self.llm.structured(
+                    system=QUIZ_SYSTEM,
+                    user=build_quiz_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"]),
+                    schema=LLMQuiz,
+                    effort="medium",
+                    max_tokens=6000,
+                ),
+                attempts=3,
+                label="quiz",
+            )
+        except LLMError:
+            plan = fallback_quiz(node)
         questions: list[dict[str, Any]] = []
         for i, q in enumerate(plan.questions[:6], start=1):
             qtype = "feynman" if q.qtype == "feynman" or not q.options else "single"
@@ -133,15 +160,15 @@ class LearningService:
                     weight_total += 2
                     continue
                 try:
-                    grade: LLMGrade = self.llm.structured(system=GRADE_SYSTEM, user=build_grade_user(node, q["stem"], text, ctx["context"]), schema=LLMGrade, effort="low", max_tokens=2000)
-                    score = max(0, min(100, int(grade.score)))
-                    feedback = grade.feedback.strip()
-                    if grade.strengths or grade.gaps:
-                        feedback += "\n\n做得好：" + "；".join(grade.strengths) if grade.strengths else ""
-                        feedback += "\n\n可补充：" + "；".join(grade.gaps) if grade.gaps else ""
-                except LLMError as exc:
-                    score = 50
-                    feedback = f"（自动评分暂不可用：{exc}）已按 50 分记录。"
+                    grade: LLMGrade = call_with_retries(lambda: self.llm.structured(system=GRADE_SYSTEM, user=build_grade_user(node, q["stem"], text, ctx["context"]), schema=LLMGrade, effort="low", max_tokens=2000), attempts=3, label="grade")
+                except LLMError:
+                    grade = fallback_grade(text)
+                score = max(0, min(100, int(grade.score)))
+                feedback = grade.feedback.strip()
+                if grade.strengths:
+                    feedback += "\n\n做得好：" + "；".join(grade.strengths)
+                if grade.gaps:
+                    feedback += "\n\n可补充：" + "；".join(grade.gaps)
                 results.append(QuestionResult(id=q["id"], qtype="feynman", correct=None, score=score, your_answer=text, answer_index=None, explanation=q["explanation"], feedback=feedback))
                 weighted_sum += score * 2
                 weight_total += 2
@@ -152,6 +179,12 @@ class LearningService:
         quiz.result = {"score": total, "results": [r.model_dump() for r in results]}
         self.db.add(Evidence(node_id=node.id, kind="quiz", score=float(total), detail={"quiz_id": quiz.id, "questions": len(results), "correct_single": sum(1 for r in results if r.correct)}))
         self.db.commit()
+        stars_text = "★" * node.mastery_stars + "☆" * (3 - node.mastery_stars)
+        profile_service.record_event(self.db, node.graph.user_id, "quiz", f"「{node.label}」小测验 {total} 分，掌握度 {stars_text}", "node", node.id, {"score": total, "stars": node.mastery_stars})
+        profile_service.add_fact(self.db, node.graph.user_id, "progress", f"「{node.label}」掌握度 {stars_text}（最近一次 {total} 分）", "quiz", 0.9)
+        feynman_text = next((r.your_answer for r in results if r.qtype == "feynman" and isinstance(r.your_answer, str) and r.your_answer), "")
+        if feynman_text:
+            profile_service.extract_facts(node.graph.user_id, f"学习者在「{node.label}」的费曼解释题中写道：{feynman_text}", "quiz", context=f"知识点：{node.label}")
         self.db.refresh(node.graph)
         progress = GraphProgress(node.graph)
         star_text = "★" * node.mastery_stars + "☆" * (3 - node.mastery_stars)
@@ -180,17 +213,25 @@ class LearningService:
 
     def generate_cards(self, node: Node) -> CardDeck:
         ctx = self._ctx(node)
-        plan: LLMCards = self.llm.structured(
-            system=CARDS_SYSTEM,
-            user=build_cards_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"]),
-            schema=LLMCards,
-            effort="low",
-            max_tokens=4000,
-        )
+        try:
+            plan: LLMCards = call_with_retries(
+                lambda: self.llm.structured(
+                    system=CARDS_SYSTEM,
+                    user=build_cards_user(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"]),
+                    schema=LLMCards,
+                    effort="low",
+                    max_tokens=4000,
+                ),
+                attempts=3,
+                label="cards",
+            )
+        except LLMError:
+            plan = fallback_cards(node)
         cards = [{"front": c.front.strip(), "back": c.back.strip(), "source_index": int(c.source_index or 0)} for c in plan.cards[:10] if c.front.strip()]
         deck = CardDeck(node_id=node.id, cards=cards)
         self.db.add(deck)
         self.db.commit()
+        profile_service.record_event(self.db, node.graph.user_id, "cards", f"为「{node.label}」生成了 {len(cards)} 张复习卡片", "node", node.id)
         return deck
 
     # ------------------------------------------------------------------ chat
@@ -206,18 +247,61 @@ class LearningService:
         self.db.commit()
         yield {"citations": ctx["citations"], "message_id": user_msg.id}
         chunks: list[str] = []
-        for delta in self.llm.stream(
-            system=build_chat_system(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"]),
-            messages=messages,
-            max_tokens=2500,
-        ):
-            chunks.append(delta)
-            yield {"delta": delta}
+        system_prompt = build_chat_system(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"])
+        for attempt in range(3):
+            try:
+                for delta in self.llm.stream(system=system_prompt, messages=messages, max_tokens=2500):
+                    chunks.append(delta)
+                    yield {"delta": delta}
+                break
+            except LLMError as exc:
+                if chunks or not is_retryable(exc) or attempt == 2:
+                    if not chunks:
+                        text = "AI 服务暂时波动，我先把这个知识点的知乎来源摘要给你：\n\n" + "\n".join(f"- {c['title']} [{c['index']}]" for c in ctx["citations"][:4]) + "\n\n稍后再问一次，我会给出完整回答。"
+                        chunks.append(text)
+                        yield {"delta": text}
+                    break
+                yield {"status": f"模型响应波动，正在重试（{attempt + 2}/3）…"}
         answer = "".join(chunks).strip()
         reply = ChatMessage(node_id=node.id, role="assistant", content=answer)
         self.db.add(reply)
         self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200]}))
         self.db.commit()
+        self._after_chat(node, question)
+        yield {"done": True, "message_id": reply.id}
+
+
+    def _after_chat(self, node: Node, question: str) -> None:
+        user_id = node.graph.user_id
+        profile_service.record_event(self.db, user_id, "chat", f"在「{node.label}」提问：{question.strip()[:80]}", "node", node.id)
+        profile_service.extract_facts(user_id, f"学习者在学习「{node.label}」时说：{question.strip()}", "chat", context=f"知识点：{node.label}")
+
+    def stream_chat_zhida(self, node: Node, question: str, official, model: str) -> Iterator[dict[str, Any]]:
+        """Answer through 知乎直答 (the platform's own RAG answer engine), scoped to this node's topic."""
+        from app.zhihu.official import OpenPlatformError
+
+        ctx = self._ctx(node)
+        user_msg = ChatMessage(node_id=node.id, role="user", content=question.strip())
+        self.db.add(user_msg)
+        self.db.commit()
+        yield {"citations": ctx["citations"], "message_id": user_msg.id, "engine": "zhida"}
+        prompt = f"我正在学习「{node.label}」（{node.description[:120]}）。{question.strip()}"
+        chunks: list[str] = []
+        try:
+            for delta in official.zhida_stream([{"role": "user", "content": prompt}], model=model):
+                if delta.get("reasoning"):
+                    yield {"reasoning": delta["reasoning"]}
+                if delta.get("content"):
+                    chunks.append(delta["content"])
+                    yield {"delta": delta["content"]}
+        except OpenPlatformError as exc:
+            raise LLMError(str(exc)) from exc
+        answer = "".join(chunks).strip()
+        reply = ChatMessage(node_id=node.id, role="assistant", content=answer)
+        self.db.add(reply)
+        self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200], "engine": "zhida"}))
+        self.db.commit()
+        self._after_chat(node, question)
         yield {"done": True, "message_id": reply.id}
 
 
@@ -256,7 +340,7 @@ def export_markdown(graph: Graph) -> str:
             if lesson:
                 lines += ["", "<details><summary>讲解</summary>", "", lesson.content_md, "", "</details>"]
             lines.append("")
-    lines += ["---", f"由 知径 LearnWay 生成 · {datetime.now().strftime('%Y-%m-%d %H:%M')}", ""]
+    lines += ["---", f"由 知径 LearnPath 生成 · {datetime.now().strftime('%Y-%m-%d %H:%M')}", ""]
     return "\n".join(lines)
 
 

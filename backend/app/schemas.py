@@ -68,6 +68,29 @@ class LLMCards(BaseModel):
     cards: list[LLMCard]
 
 
+class LLMClarifyQuestion(BaseModel):
+    id: str = Field(description="q1、q2 …")
+    question: str = Field(description="一句话问题，面向学习者")
+    options: list[str] = Field(description="2-5 个可直接点选的简短选项；最后不要包含“其他”，界面会自带自由输入")
+    multiple: bool = Field(description="是否可多选")
+    why: str = Field(description="为什么这个信息会影响路线设计，一句话")
+
+
+class LLMClarification(BaseModel):
+    intro: str = Field(description="一句话复述你对目标的理解")
+    questions: list[LLMClarifyQuestion] = Field(description="2-4 个问题，按重要性排序")
+
+
+class LLMProfileFact(BaseModel):
+    kind: Literal["background", "skill", "goal", "preference", "interest", "progress", "other"]
+    text: str = Field(description="一句话事实，第三人称，例如：计算机专业大三学生；会 Java，做过 Spring Boot 项目")
+    confidence: float = Field(description="0-1")
+
+
+class LLMProfileFacts(BaseModel):
+    facts: list[LLMProfileFact]
+
+
 # --------------------------------------------------------------------------- #
 # API contracts
 # --------------------------------------------------------------------------- #
@@ -75,11 +98,94 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClarifyAnswer(BaseModel):
+    question: str = Field(max_length=500)
+    answer: str = Field(default="", max_length=2000)
+
+
 class GoalCreate(BaseModel):
     goal: str = Field(min_length=2, max_length=2000)
     background: str = Field(default="", max_length=64)
     time_budget: str = Field(default="", max_length=64)
     purpose: str = Field(default="", max_length=500)
+    answers: list[ClarifyAnswer] = Field(default_factory=list)
+    attachment_ids: list[str] = Field(default_factory=list)
+
+
+class ClarifyRequest(BaseModel):
+    goal: str = Field(min_length=2, max_length=2000)
+    background: str = Field(default="", max_length=64)
+    time_budget: str = Field(default="", max_length=64)
+    purpose: str = Field(default="", max_length=500)
+    attachment_ids: list[str] = Field(default_factory=list)
+
+
+class ClarifyQuestionOut(BaseModel):
+    id: str
+    question: str
+    options: list[str]
+    multiple: bool
+    why: str = ""
+
+
+class ClarifyOut(BaseModel):
+    intro: str
+    questions: list[ClarifyQuestionOut]
+    profile_hint: str = ""
+
+
+class ProfileFactOut(ORMModel):
+    id: str
+    kind: str
+    text: str
+    source: str
+    confidence: float
+    created_at: datetime
+
+
+class ProfileFactCreate(BaseModel):
+    kind: Literal["background", "skill", "goal", "preference", "interest", "progress", "other"] = "other"
+    text: str = Field(min_length=1, max_length=500)
+
+
+class ProfileEventOut(ORMModel):
+    id: str
+    kind: str
+    summary: str
+    ref_type: str
+    ref_id: str
+    detail: dict[str, Any]
+    created_at: datetime
+
+
+class AttachmentOut(ORMModel):
+    id: str
+    graph_id: str | None
+    filename: str
+    content_type: str
+    size: int
+    has_text: bool = False
+    summary: str = ""
+    created_at: datetime
+
+
+class MeOut(BaseModel):
+    id: str
+    name: str
+    avatar: str
+    headline: str
+    provider: str
+    is_guest: bool
+    created_at: datetime
+
+
+class DashboardOut(BaseModel):
+    user: MeOut
+    facts: list[ProfileFactOut]
+    events: list[ProfileEventOut]
+    graphs: list["GraphOut"]
+    attachments: list[AttachmentOut]
+    stats: dict[str, Any]
 
 
 class SourceOut(ORMModel):
@@ -141,12 +247,14 @@ class GraphStats(BaseModel):
 class GraphOut(ORMModel):
     id: str
     goal_id: str
+    user_id: str | None = None
     title: str
     summary: str
     learner_profile: str
     status: str
     error: str = ""
     progress: dict[str, Any] = {}
+    degraded: bool = False
     created_at: datetime
     goal_text: str = ""
     nodes: list[NodeOut] = []
@@ -242,16 +350,18 @@ class CardsOut(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    mode: Literal["tutor", "zhida"] = "tutor"  # tutor = LearnPath 导师（引用本节点来源）；zhida = 知乎直答
 
 
 class HotItem(BaseModel):
     id: str
     title: str
-    heat: str
-    excerpt: str
+    heat: str = ""
+    excerpt: str = ""
     url: str
     answer_count: int = 0
     follower_count: int = 0
+    thumbnail: str = ""
 
 
 class HealthOut(BaseModel):
@@ -262,3 +372,7 @@ class HealthOut(BaseModel):
     zhihu_official: bool
     reader: str
     zhihu_oauth: str = "disabled"
+    zhida: bool = False
+
+
+DashboardOut.model_rebuild()

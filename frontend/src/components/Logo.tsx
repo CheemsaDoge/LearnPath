@@ -12,7 +12,7 @@ export function Logo({ className = "" }: { className?: string }) {
         </svg>
       </span>
       <span className="text-[17px] font-bold tracking-tight">
-        知径 <span className="text-brand-500">LearnWay</span>
+        知径 <span className="text-brand-500">LearnPath</span>
       </span>
     </Link>
   );

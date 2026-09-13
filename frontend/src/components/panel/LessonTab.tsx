@@ -8,6 +8,8 @@ export function LessonTab({ node, onLearned }: { node: NodeDetail; onLearned: ()
   const [text, setText] = useState(node.lesson?.content_md ?? "");
   const [citations, setCitations] = useState<Citation[]>(node.lesson?.citations ?? []);
   const [streaming, setStreaming] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [degraded, setDegraded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -19,25 +21,39 @@ export function LessonTab({ node, onLearned }: { node: NodeDetail; onLearned: ()
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const generate = async () => {
+  const generate = async (attempt = 1) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setStreaming(true);
     setError(null);
+    setStatus(null);
+    setDegraded(false);
     setText("");
+    let got = false;
     await streamSSE(
       `/nodes/${node.id}/lesson`,
       undefined,
       {
         onMeta: (m) => Array.isArray(m.citations) && setCitations(m.citations as Citation[]),
-        onDelta: (d) => setText((t) => t + d),
-        onDone: () => {
+        onStatus: (t) => setStatus(t),
+        onDelta: (d) => {
+          got = true;
+          setStatus(null);
+          setText((t) => t + d);
+        },
+        onDone: (m) => {
           setStreaming(false);
+          setDegraded(Boolean(m.degraded));
           onLearned();
         },
         onError: (msg) => {
-          setError(msg);
+          if (!got && attempt < 2 && !ctrl.signal.aborted) {
+            setStatus("连接波动，正在重新生成…");
+            window.setTimeout(() => generate(attempt + 1), 1200);
+            return;
+          }
+          setError(got ? "讲解在中途中断了，已保留已生成的部分。" : msg);
           setStreaming(false);
         },
       },
@@ -46,14 +62,14 @@ export function LessonTab({ node, onLearned }: { node: NodeDetail; onLearned: ()
     setStreaming(false);
   };
 
-  if (!text && !streaming) {
+  if (!text && !streaming && !status) {
     return (
       <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/50 p-6 text-center">
         <p className="text-sm text-slate-600 leading-6">
           基于右侧 <b>{node.sources.length}</b> 篇知乎来源，为你生成一份带引用的讲解：定义 → 直觉 → 要点 → 误区 → 观点对照 → 自检。
         </p>
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
-        <button onClick={generate} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+        <button onClick={() => generate()} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
           <Sparkles size={15} /> 开始学习这个知识点
         </button>
       </div>
@@ -63,8 +79,8 @@ export function LessonTab({ node, onLearned }: { node: NodeDetail; onLearned: ()
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs text-slate-500">{streaming ? "正在基于知乎来源生成讲解…" : `讲解引用了 ${citations.length} 篇知乎来源，点击角标可跳转`}</span>
-        <button onClick={generate} disabled={streaming} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-50">
+        <span className="text-xs text-slate-500">{status ?? (streaming ? "正在基于知乎来源生成讲解…" : degraded ? "AI 刚才有波动，这是临时版本；点右侧可重新生成" : `讲解引用了 ${citations.length} 篇知乎来源，点击角标可跳转`)}</span>
+        <button onClick={() => generate()} disabled={streaming} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-50">
           {streaming ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} 重新生成
         </button>
       </div>

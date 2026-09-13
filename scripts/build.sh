@@ -3,4 +3,4 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/frontend" && npm install --no-audit --no-fund && npm run build
-echo "[learnway] built frontend/dist — start the server with: cd backend && .venv/bin/uvicorn app.main:app --port 8000"
+echo "[learnpath] built frontend/dist — start the server with: cd backend && .venv/bin/uvicorn app.main:app --port 8000"

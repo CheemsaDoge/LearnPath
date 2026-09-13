@@ -9,7 +9,7 @@ RUN npm run build
 # ---- backend runtime
 FROM python:3.12-slim
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 LEARNWAY_FRONTEND_DIST=/app/frontend/dist LEARNWAY_DATABASE_URL=sqlite:////data/learnway.db
+ENV PYTHONUNBUFFERED=1 LEARNPATH_FRONTEND_DIST=/app/frontend/dist LEARNPATH_DATABASE_URL=sqlite:////data/learnpath.db
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/ ./backend/

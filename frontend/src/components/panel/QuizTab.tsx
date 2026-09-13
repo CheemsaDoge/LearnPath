@@ -26,7 +26,7 @@ export function QuizTab({ node, onGraded }: { node: NodeDetail; onGraded: (r: Qu
     try {
       setQuiz(await api.createQuiz(node.id));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "生成失败");
+      setError(e instanceof ApiError && e.status !== 0 ? "生成题目时遇到问题，请再试一次。" : "网络不稳定，请再试一次。");
     } finally {
       setBusy(null);
     }
@@ -41,7 +41,7 @@ export function QuizTab({ node, onGraded }: { node: NodeDetail; onGraded: (r: Qu
       setResult(r);
       onGraded(r);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "提交失败");
+      setError(e instanceof ApiError && e.status === 409 ? "这份测验已经提交过了，请再来一组。" : "提交时遇到问题，你的答案还在，请再点一次提交。");
     } finally {
       setBusy(null);
     }

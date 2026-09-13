@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { BookOpen, Dumbbell, Lock, Loader2, Sparkles } from "lucide-react";
+import { plainMath } from "../../lib/api";
 import { Stars } from "../Stars";
 import type { FlowNodeData } from "./layout";
 
@@ -32,7 +33,7 @@ export function LearnNode({ data }: NodeProps<Node<FlowNodeData>>) {
       <div className={`flex items-start gap-1.5 ${isRoot ? "justify-center" : ""}`}>
         {!isRoot && node.node_type === "practice" && <Dumbbell size={14} className="mt-0.5 shrink-0 text-emerald-600" />}
         {!isRoot && node.node_type === "concept" && <BookOpen size={14} className="mt-0.5 shrink-0 text-brand-500" />}
-        <div className={`font-semibold leading-snug ${isRoot ? "text-[15px]" : "text-[13px]"} line-clamp-2`}>{node.label}</div>
+        <div className={`font-semibold leading-snug ${isRoot ? "text-[15px]" : "text-[13px]"} line-clamp-2`}>{plainMath(node.label)}</div>
       </div>
       {!isRoot && (
         <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">

@@ -1,5 +1,5 @@
 {
-  "name": "learnway-frontend",
+  "name": "learnpath-frontend",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,12 +13,15 @@
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",
     "@xyflow/react": "^12.8.0",
+    "katex": "^0.16.47",
     "lucide-react": "^0.544.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.9.0",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",

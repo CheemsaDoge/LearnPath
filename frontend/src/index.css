@@ -36,6 +36,9 @@ body { @apply bg-paper text-ink antialiased; }
 .cite, .prose-learn a.cite { @apply inline-flex items-center justify-center min-w-[1.35rem] h-[1.15rem] px-1 mx-0.5 rounded-full bg-brand-100 text-brand-700 text-[11px] font-semibold align-middle no-underline; }
 .prose-learn a.cite:hover { @apply bg-brand-200; }
 
+.prose-learn .katex-display { @apply my-3 overflow-x-auto; }
+.prose-learn .katex { font-size: 1.02em; }
+
 .react-flow__attribution { display: none; }
 .react-flow__node { cursor: pointer; }
 

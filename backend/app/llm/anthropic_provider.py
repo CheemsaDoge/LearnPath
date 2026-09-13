@@ -26,18 +26,26 @@ class AnthropicProvider:
 
     name = "anthropic"
 
-    def __init__(self, model: str, betas: list[str] | None = None, timeout: float = 180.0) -> None:
+    def __init__(self, model: str, betas: list[str] | None = None, timeout: float = 180.0, api_key: str | None = None, auth_token: str | None = None, base_url: str | None = None) -> None:
         self.model = model
         self.betas = betas or []
-        self.client = anthropic.Anthropic(timeout=timeout, max_retries=2)
+        kwargs: dict = {"timeout": timeout, "max_retries": 2}
+        if api_key:
+            kwargs["api_key"] = api_key
+        if auth_token:
+            kwargs["auth_token"] = auth_token
+        if base_url:
+            kwargs["base_url"] = base_url
+        self.client = anthropic.Anthropic(**kwargs)
         self._structured_mode = "native"  # native | prompt
+        self._effort_supported = True
 
     # ------------------------------------------------------------------ helpers
     def _extra_headers(self) -> dict[str, str]:
         return {"anthropic-beta": ",".join(self.betas)} if self.betas else {}
 
     def _effort_kwargs(self, effort: str) -> dict:
-        if effort and any(h in self.model for h in _EFFORT_MODEL_HINTS):
+        if effort and self._effort_supported and any(h in self.model for h in _EFFORT_MODEL_HINTS):
             return {"output_config": {"effort": effort}}
         return {}
 
@@ -97,21 +105,29 @@ class AnthropicProvider:
         return "".join(chunks)
 
     def stream(self, *, system: str, messages: list[dict[str, str]], max_tokens: int = 6000, effort: str = "medium") -> Iterator[str]:
-        try:
-            with self.client.messages.stream(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=messages,
-                extra_headers=self._extra_headers(),
-                **self._effort_kwargs(effort),
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
-                final = stream.get_final_message()
-                if final.stop_reason == "refusal":
-                    raise LLMError("模型拒绝了这次请求（safety refusal）")
-        except LLMError:
-            raise
-        except Exception as exc:
-            raise self._wrap(exc) from exc
+        for attempt in range(2):
+            try:
+                with self.client.messages.stream(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=messages,
+                    extra_headers=self._extra_headers(),
+                    **self._effort_kwargs(effort),
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield text
+                    final = stream.get_final_message()
+                    if final.stop_reason == "refusal":
+                        raise LLMError("模型拒绝了这次请求（safety refusal）")
+                return
+            except anthropic.BadRequestError as exc:
+                if attempt == 0 and self._effort_supported and "output_config" in str(exc):
+                    log.warning("upstream rejected output_config.effort; disabling effort control")
+                    self._effort_supported = False
+                    continue
+                raise self._wrap(exc) from exc
+            except LLMError:
+                raise
+            except Exception as exc:
+                raise self._wrap(exc) from exc

@@ -11,9 +11,13 @@ from app.config import get_settings
 from app.db import session_factory
 from app.llm.base import LLMError
 from app.llm.factory import get_llm
-from app.models import Edge, Goal, Graph, Node
+from app.llm.resilience import call_with_retries
+from app.services.fallbacks import fallback_graph
+from app.models import Edge, Goal, Graph, Node, User
 from app.schemas import GoalCreate, LLMGraph
 from app.services.deps import get_reader, get_search
+from app.services import profile as profile_service
+from app.services.attachments import attachment_context
 from app.services.grounding import ground_nodes
 from app.services.progress import GraphProgress
 from app.services.prompts import GRAPH_SYSTEM, build_graph_user
@@ -21,13 +25,28 @@ from app.services.prompts import GRAPH_SYSTEM, build_graph_user
 log = logging.getLogger(__name__)
 
 
-def create_goal_graph(db: Session, payload: GoalCreate) -> Graph:
-    goal = Goal(raw_goal=payload.goal.strip(), background=payload.background.strip(), time_budget=payload.time_budget.strip(), purpose=payload.purpose.strip())
+def create_goal_graph(db: Session, payload: GoalCreate, user: User | None = None) -> Graph:
+    answers = [{"question": a.question.strip(), "answer": a.answer.strip()} for a in payload.answers if a.question.strip()]
+    goal = Goal(
+        user_id=user.id if user else None,
+        raw_goal=payload.goal.strip(),
+        background=payload.background.strip(),
+        time_budget=payload.time_budget.strip(),
+        purpose=payload.purpose.strip(),
+        clarifications=answers,
+        attachment_ids=list(payload.attachment_ids),
+    )
     db.add(goal)
     db.flush()
-    graph = Graph(goal_id=goal.id, title=payload.goal.strip()[:60], status="generating", progress={"step": "plan", "done": 0, "total": 0})
+    graph = Graph(goal_id=goal.id, user_id=user.id if user else None, title=payload.goal.strip()[:60], status="generating", progress={"step": "plan", "done": 0, "total": 0})
     db.add(graph)
     db.commit()
+    if user is not None:
+        profile_service.record_event(db, user.id, "goal", f"创建学习目标：{goal.raw_goal[:100]}", "graph", graph.id, {"answers": len(answers), "attachments": len(goal.attachment_ids)})
+        blob = "学习目标：" + goal.raw_goal + "\n基础：" + goal.background + "\n时间：" + goal.time_budget + "\n用途：" + goal.purpose
+        if answers:
+            blob += "\n澄清问答：\n" + "\n".join(f"问：{a['question']} 答：{a['answer']}" for a in answers)
+        profile_service.extract_facts(user.id, blob, "clarify")
     return graph
 
 
@@ -102,13 +121,20 @@ def run_pipeline(graph_id: str) -> None:
         llm = get_llm()
         graph.provider_trace = {"llm": llm.name, "model": llm.model}
         db.commit()
+        profile_ctx = profile_service.profile_context(db, graph.user_id)
+        attachments_ctx = attachment_context(db, graph.user_id, graph.goal.attachment_ids or []) if graph.user_id else ""
+        user_prompt = build_graph_user(graph.goal, profile_ctx, attachments_ctx)
+        degraded = ""
         try:
-            plan = llm.structured(system=GRAPH_SYSTEM, user=build_graph_user(graph.goal), schema=LLMGraph, effort="high", max_tokens=16000)
+            plan = call_with_retries(lambda: llm.structured(system=GRAPH_SYSTEM, user=user_prompt, schema=LLMGraph, effort="high", max_tokens=8000), attempts=3, label="graph-plan")
         except LLMError as exc:
-            graph.status = "failed"
-            graph.error = f"生成图谱失败：{exc}"
-            db.commit()
-            return
+            log.error("graph plan failed after retries for %s: %s", graph_id, exc)
+            try:  # one more try with a lighter budget before giving up on the model
+                plan = call_with_retries(lambda: llm.structured(system=GRAPH_SYSTEM, user=user_prompt + "\n\n（请精简：3 个模块、每个模块 2 个知识点。）", schema=LLMGraph, effort="low", max_tokens=5000), attempts=2, label="graph-plan-lite")
+            except LLMError as exc2:
+                plan = fallback_graph(graph.goal.raw_goal)
+                degraded = f"{exc2}"[:300]
+        graph.provider_trace = {**(graph.provider_trace or {}), "degraded": bool(degraded), "degraded_reason": degraded}
         persist_plan(db, graph, plan)
         db.refresh(graph)
         progress = GraphProgress(graph)

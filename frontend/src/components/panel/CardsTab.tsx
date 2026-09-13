@@ -21,7 +21,7 @@ export function CardsTab({ node }: { node: NodeDetail }) {
       setCards((await api.createCards(node.id)).cards);
       setFlipped(new Set());
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "生成失败");
+      setError(e instanceof ApiError && e.status !== 0 ? "生成卡片时遇到问题，请再试一次。" : "网络不稳定，请再试一次。");
     } finally {
       setBusy(false);
     }

@@ -18,6 +18,9 @@ class Goal(Base):
     __tablename__ = "goals"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("goal_"))
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    clarifications: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    attachment_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     raw_goal: Mapped[str] = mapped_column(Text)
     background: Mapped[str] = mapped_column(String(64), default="")
     time_budget: Mapped[str] = mapped_column(String(64), default="")
@@ -32,6 +35,7 @@ class Graph(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("g_"))
     goal_id: Mapped[str] = mapped_column(ForeignKey("goals.id"))
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     summary: Mapped[str] = mapped_column(Text, default="")
     learner_profile: Mapped[str] = mapped_column(Text, default="")
@@ -215,3 +219,48 @@ class LoginSession(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     user: Mapped[User] = relationship()
+
+
+class ProfileFact(Base):
+    """One remembered fact about a learner (学习档案). Written by every interaction, editable by the user."""
+
+    __tablename__ = "profile_facts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pf_"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="other")  # background|skill|goal|preference|interest|progress|other
+    text: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(32), default="manual")  # clarify|chat|quiz|lesson|upload|manual|login
+    confidence: Mapped[float] = mapped_column(Float, default=0.8)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class ProfileEvent(Base):
+    """Interaction timeline (档案馆): everything the learner did, with references."""
+
+    __tablename__ = "profile_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("pe_"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # goal|clarify|lesson|quiz|chat|cards|upload|login|manual
+    summary: Mapped[str] = mapped_column(Text, default="")
+    ref_type: Mapped[str] = mapped_column(String(32), default="")
+    ref_id: Mapped[str] = mapped_column(String(64), default="")
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("att_"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    graph_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    filename: Mapped[str] = mapped_column(String(300))
+    content_type: Mapped[str] = mapped_column(String(120), default="")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    path: Mapped[str] = mapped_column(String(600))
+    text: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

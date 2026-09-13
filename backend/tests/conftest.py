@@ -4,15 +4,20 @@ import os
 import tempfile
 from pathlib import Path
 
-os.environ["LEARNWAY_LLM_PROVIDER"] = "mock"
-os.environ["LEARNWAY_DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 'test.db'}"
-os.environ["LEARNWAY_ZHIHU_SEARCH_BACKENDS"] = "brave"
+os.environ["LEARNPATH_SKIP_DOTENV"] = "1"
+os.environ["LEARNPATH_LLM_PROVIDER"] = "mock"
+os.environ["LEARNPATH_DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 'test.db'}"
+os.environ["LEARNPATH_ZHIHU_SEARCH_BACKENDS"] = "brave"
+os.environ.pop("ZHIHU_ACCESS_SECRET", None)
+os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import db as dbmod
 from app.services import deps, graph_builder
+from app.services import profile as profile_service
 from app.zhihu.models import PageContent, SearchHit
 
 
@@ -44,12 +49,13 @@ def fake_search() -> FakeSearch:
 
 @pytest.fixture(scope="session", autouse=True)
 def _wire(fake_search: FakeSearch):
-    dbmod.reset_engine_for_tests(os.environ["LEARNWAY_DATABASE_URL"])
+    dbmod.reset_engine_for_tests(os.environ["LEARNPATH_DATABASE_URL"])
     deps.get_search = lambda: fake_search  # type: ignore[assignment]
     deps.get_reader = lambda: FakeReader()  # type: ignore[assignment]
     graph_builder.get_search = lambda: fake_search  # type: ignore[assignment]
     graph_builder.get_reader = lambda: FakeReader()  # type: ignore[assignment]
     graph_builder.start_pipeline = graph_builder.run_pipeline  # run synchronously in tests
+    profile_service.ASYNC_EXTRACTION = False
     yield
 
 

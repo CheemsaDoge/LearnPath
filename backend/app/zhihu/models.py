@@ -19,13 +19,21 @@ class SearchHit:
     backend: str = "web"
     rank: int = 0
     content: str = ""  # full text when the backend already returns it (e.g. Jina search)
+    votes: int = 0
+    author: str = ""
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SearchHit":
-        return cls(**{k: data.get(k, "") for k in ("url", "title", "snippet", "kind", "backend", "content")}, rank=int(data.get("rank", 0)))
+        return cls(
+            **{k: data.get(k, "") for k in ("url", "title", "snippet", "kind", "backend", "content", "author")},
+            rank=int(data.get("rank", 0)),
+            votes=int(data.get("votes", 0) or 0),
+            meta=data.get("meta") or {},
+        )
 
 
 @dataclass

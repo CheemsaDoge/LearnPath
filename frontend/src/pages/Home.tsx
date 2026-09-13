@@ -1,10 +1,11 @@
-import { ArrowRight, Flame, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Flame, LayoutDashboard, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AuthMenu } from "../components/AuthMenu";
-import { Logo } from "../components/Logo";
-import { api, ApiError, rememberGraph } from "../lib/api";
-import type { Graph, Health, HotItem } from "../lib/types";
+import { AppHeader } from "../components/AppHeader";
+import { ClarifyWizard } from "../components/ClarifyWizard";
+import { Footer } from "../components/Footer";
+import { api } from "../lib/api";
+import type { GoalInput, Graph, Health, HotItem } from "../lib/types";
 
 const BACKGROUNDS = ["零基础", "有一点基础", "有相关经验，想进阶"];
 const BUDGETS = ["1 周内速通", "每天 1 小时，1 个月", "每周末，3 个月"];
@@ -22,7 +23,8 @@ export function Home() {
   const [background, setBackground] = useState(BACKGROUNDS[0]);
   const [budget, setBudget] = useState(BUDGETS[1]);
   const [purpose, setPurpose] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy] = useState(false);
+  const [wizard, setWizard] = useState<GoalInput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hot, setHot] = useState<HotItem[] | null>(null);
   const [recent, setRecent] = useState<Graph[]>([]);
@@ -34,19 +36,11 @@ export function Home() {
     api.health().then(setHealth).catch(() => setHealth(null));
   }, []);
 
-  const submit = async (text = goal, extraPurpose = purpose) => {
+  const submit = (text = goal, extraPurpose = purpose) => {
     const g = text.trim();
     if (g.length < 2 || busy) return;
-    setBusy(true);
     setError(null);
-    try {
-      const created = await api.createGoal({ goal: g, background, time_budget: budget, purpose: extraPurpose });
-      rememberGraph(created.graph_id);
-      nav(`/g/${created.graph_id}`);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "创建失败，请稍后重试");
-      setBusy(false);
-    }
+    setWizard({ goal: g, background, time_budget: budget, purpose: extraPurpose });
   };
 
   const learnHot = (item: HotItem) => {
@@ -61,20 +55,10 @@ export function Home() {
 
   return (
     <div className="min-h-full">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <Logo />
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <AuthMenu />
-          {health && (
-            <span className={`rounded-full px-2 py-0.5 ${health.llm_provider === "mock" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-              {health.llm_provider === "mock" ? "离线演示模式" : `模型：${health.llm_model}`}
-            </span>
-          )}
-          <a href="https://github.com/SunnyBoy-y/LearnGraph" target="_blank" rel="noreferrer" className="hover:text-brand-600">
-            灵感来自 LearnGraph
-          </a>
-        </div>
-      </header>
+      <AppHeader>
+        {health && health.llm_provider === "mock" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">离线演示模式</span>}
+      </AppHeader>
+      {wizard && <ClarifyWizard initial={wizard} onClose={() => setWizard(null)} />}
 
       <main className="mx-auto max-w-6xl px-6 pb-20">
         <section className="pt-8 pb-10 text-center">
@@ -87,8 +71,8 @@ export function Home() {
             变成<span className="text-brand-500">你的学习路径</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-7 text-slate-600">
-            说出一个真实的学习目标，知径会为你生成一张可视化的知识图谱；每个知识点都关联知乎上的优质讨论，
-            并基于这些来源生成带引用的讲解、小测验、复习卡片，用证据追踪你的掌握程度，推荐下一步。
+            说出一个真实的学习目标，知径会先问你几个关键问题（前置知识、目标深度、学习偏好），再生成一张可视化的知识图谱；
+            每个知识点都锚定知乎上的优质讨论，讲解、测验、卡片全部带引用，用证据追踪掌握度，并把你的每一次互动写进学习档案。
           </p>
         </section>
 
@@ -135,8 +119,8 @@ export function Home() {
                 </button>
               ))}
             </div>
-            <button onClick={() => submit()} disabled={busy || goal.trim().length < 2} className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 disabled:opacity-50">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />} 生成我的学习路径
+            <button onClick={() => submit()} disabled={goal.trim().length < 2} className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 disabled:opacity-50">
+              <ArrowRight size={16} /> 开始规划学习路径
             </button>
           </div>
         </section>
@@ -156,8 +140,10 @@ export function Home() {
                   <span className={`mt-0.5 w-5 text-center text-sm font-bold ${i < 3 ? "text-orange-500" : "text-slate-400"}`}>{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-medium leading-6 line-clamp-2">{item.title}</div>
+                    {item.excerpt && <div className="mt-0.5 text-xs leading-5 text-slate-500 line-clamp-1">{item.excerpt}</div>}
                     <div className="mt-0.5 text-xs text-slate-400">
-                      {item.heat} · {item.answer_count} 回答 ·{" "}
+                      {[item.heat, item.answer_count ? `${item.answer_count} 回答` : ""].filter(Boolean).join(" · ")}
+                      {(item.heat || item.answer_count) ? " · " : ""}
                       <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-brand-600">
                         去知乎看
                       </a>
@@ -171,10 +157,15 @@ export function Home() {
             </ol>
           </div>
           <div className="lg:col-span-2">
-            <h2 className="mb-3 text-lg font-bold">我的学习路径</h2>
+            <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">我的学习路径</h2>
+            <button onClick={() => nav("/dashboard")} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline">
+              <LayoutDashboard size={13} /> 控制台
+            </button>
+          </div>
             {recent.length === 0 && <p className="text-sm text-slate-400">还没有学习路径。从上面输入一个目标开始吧。</p>}
             <ul className="space-y-2">
-              {recent.map((g) => (
+              {recent.slice(0, 6).map((g) => (
                 <li key={g.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-300">
                   <button onClick={() => nav(`/g/${g.id}`)} className="min-w-0 flex-1 text-left">
                     <div className="truncate text-[14px] font-medium">{g.title || g.goal_text}</div>
@@ -204,6 +195,7 @@ export function Home() {
           ))}
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

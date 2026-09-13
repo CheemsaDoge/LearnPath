@@ -69,7 +69,7 @@ class PageReader:
 
     def fetch(self, url: str) -> PageContent:
         # NOTE: a browser-like User-Agent makes the reader's edge return a 403 challenge page; keep a plain UA.
-        headers = {"User-Agent": "learnway/0.1 (+https://github.com)", "Accept": "text/plain", "X-Timeout": "25"}
+        headers = {"User-Agent": "learnpath/0.1 (+https://github.com)", "Accept": "text/plain", "X-Timeout": "25"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         try:

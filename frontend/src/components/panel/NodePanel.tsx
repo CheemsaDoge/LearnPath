@@ -1,7 +1,8 @@
 import { BookOpen, ClipboardList, Layers, Link2, Loader2, Lock, MessageCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
+import { api, plainMath } from "../../lib/api";
 import type { NodeDetail, QuizResult } from "../../lib/types";
+import { Markdown } from "../Markdown";
 import { Stars } from "../Stars";
 import { CardsTab } from "./CardsTab";
 import { ChatTab } from "./ChatTab";
@@ -73,13 +74,15 @@ export function NodePanel({ nodeId, onClose, onChanged, onNavigate }: { nodeId: 
               <span>约 {node.est_minutes} 分钟</span>
               {node.attempts > 0 && <span>已练 {node.attempts} 次</span>}
             </div>
-            <h2 className="mt-1 text-lg font-bold leading-snug">{node.label}</h2>
+            <h2 className="mt-1 text-lg font-bold leading-snug">{plainMath(node.label)}</h2>
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="关闭">
             <X size={18} />
           </button>
         </div>
-        <p className="mt-1.5 text-[13px] leading-6 text-slate-600">{node.description}</p>
+        <div className="mt-1.5 text-[13px] leading-6 text-slate-600 [&_p]:my-0 [&_p]:text-[13px]">
+          <Markdown text={node.description} />
+        </div>
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1">
             掌握度 <Stars value={node.mastery_stars} />

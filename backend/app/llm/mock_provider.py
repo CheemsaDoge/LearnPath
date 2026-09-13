@@ -8,7 +8,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from app.schemas import LLMCard, LLMCards, LLMGrade, LLMGraph, LLMGraphEdge, LLMGraphNode, LLMQuiz, LLMQuizQuestion
+from app.schemas import LLMCard, LLMCards, LLMClarification, LLMClarifyQuestion, LLMGrade, LLMGraph, LLMGraphEdge, LLMGraphNode, LLMProfileFact, LLMProfileFacts, LLMQuiz, LLMQuizQuestion
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -85,6 +85,32 @@ def _mock_cards(user: str) -> LLMCards:
     ])
 
 
+def _mock_clarify(user: str) -> LLMClarification:
+    topic = _topic_from_prompt(user)
+    return LLMClarification(
+        intro=f"你想系统掌握「{topic}」，我先确认几个会影响路线的信息。",
+        questions=[
+            LLMClarifyQuestion(id="q1", question=f"关于「{topic}」，你目前的基础是？", options=["完全零基础", "看过一些资料", "有相关课程基础", "用过但不系统"], multiple=False, why="决定起点和是否需要补前置知识"),
+            LLMClarifyQuestion(id="q2", question="你希望达到什么程度？", options=["能看懂原理", "能动手实践", "能讲给别人", "应付考试/面试"], multiple=True, why="决定路线深度与练习比重"),
+            LLMClarifyQuestion(id="q3", question="你更喜欢哪种学习方式？", options=["先看例子再看原理", "先看原理再做题", "边做项目边学"], multiple=False, why="决定讲解与练习的组织方式"),
+        ],
+    )
+
+
+def _mock_profile_facts(user: str) -> LLMProfileFacts:
+    body = user.split("内容：", 1)[-1]
+    facts: list[LLMProfileFact] = []
+    m = re.search(r"(?:我是|本人是|我本科是)([^，。,\n]{2,30})", body)
+    if m:
+        facts.append(LLMProfileFact(kind="background", text=m.group(1).strip(), confidence=0.9))
+    for m in re.finditer(r"(?<![学教])(?:会|了解|学过|掌握|熟悉)\s*([A-Za-z][A-Za-z+#.]{0,19}|[\u4e00-\u9fff]{2,8})", body):
+        facts.append(LLMProfileFact(kind="skill", text=f"了解 {m.group(1).strip()}", confidence=0.7))
+    m = re.search(r"(?:想|希望|目标是)([^，。,\n]{4,40})", body)
+    if m and "学习目标" not in body[:20]:
+        facts.append(LLMProfileFact(kind="goal", text=m.group(1).strip(), confidence=0.6))
+    return LLMProfileFacts(facts=facts[:5])
+
+
 class MockProvider:
     name = "mock"
     model = "offline-demo"
@@ -101,6 +127,10 @@ class MockProvider:
             return _mock_grade(user)  # type: ignore[return-value]
         if schema is LLMCards:
             return _mock_cards(user)  # type: ignore[return-value]
+        if schema is LLMClarification:
+            return _mock_clarify(user)  # type: ignore[return-value]
+        if schema is LLMProfileFacts:
+            return _mock_profile_facts(user)  # type: ignore[return-value]
         raise NotImplementedError(f"MockProvider has no canned output for {schema.__name__}")
 
     def complete(self, *, system: str, user: str, max_tokens: int = 4000) -> str:

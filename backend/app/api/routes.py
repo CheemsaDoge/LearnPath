@@ -10,12 +10,15 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.api.identity import get_current_user
 from app.db import get_db
 from app.llm.base import LLMError
 from app.llm.factory import get_llm
-from app.models import CardDeck, ChatMessage, Edge, Graph, Node, Quiz
+from app.models import CardDeck, ChatMessage, Edge, Graph, Node, Quiz, User
 from app.schemas import (
     CardsOut,
+    ClarifyOut,
+    ClarifyRequest,
     ChatMessageOut,
     ChatRequest,
     EdgeOut,
@@ -35,6 +38,8 @@ from app.schemas import (
     SourceOut,
 )
 from app.services import graph_builder
+from app.services import profile as profile_service
+from app.services.clarify import clarify as clarify_goal
 from app.services.cache import cache_get, cache_set
 from app.services.deps import get_official
 from app.services.learning import LearningService, export_markdown
@@ -91,6 +96,7 @@ def _graph_out(graph: Graph) -> GraphOut:
     if graph.status in {"ready", "grounding"}:
         out.stats = progress.stats()
         out.next_actions = progress.next_actions()
+    out.degraded = bool((graph.provider_trace or {}).get("degraded"))
     return out
 
 
@@ -125,37 +131,68 @@ def health() -> HealthOut:
         zhihu_official=get_official().configured,
         reader=settings.reader_base,
         zhihu_oauth="enabled(test)" if settings.zhihu_oauth_enabled else "disabled",
+        zhida=get_official().configured,
     )
+
+
+@router.get("/quota")
+def open_platform_quota() -> list[dict]:
+    """当前 Access Secret 的开放平台当日额度（不消耗业务额度）。"""
+    official = get_official()
+    if not official.configured:
+        raise HTTPException(503, "知乎数据开放平台未配置")
+    try:
+        return official.quota()
+    except Exception as exc:
+        raise HTTPException(502, f"额度查询失败：{exc}") from exc
 
 
 @router.get("/hot", response_model=list[HotItem])
 def hot_list(db: Session = Depends(get_db)) -> list[HotItem]:
-    cached = cache_get(db, "hot:v1", max_age_seconds=600)
+    """知乎热榜：优先官方开放平台接口（每日 100 次额度，缓存 30 分钟），失败时退回匿名接口。"""
+    settings = get_settings()
+    official = get_official()
+    cached = cache_get(db, "hot:v2", max_age_seconds=settings.hot_cache_seconds)
     if cached is None:
-        try:
-            cached = fetch_hot_list(limit=30)
-        except Exception as exc:
-            log.warning("hot list unavailable: %s", exc)
-            stale = cache_get(db, "hot:v1")
-            if stale is None:
-                raise HTTPException(503, "知乎热榜暂时不可用") from exc
-            cached = stale
-        else:
-            cache_set(db, "hot:v1", cached)
-    return [HotItem(**item) for item in cached]
+        items: list[dict] | None = None
+        if official.configured:
+            try:
+                items = official.hot(limit=30)
+            except Exception as exc:
+                log.warning("official hot list failed: %s", exc)
+        if not items:
+            try:
+                items = fetch_hot_list(limit=30)
+            except Exception as exc:
+                log.warning("hot list unavailable: %s", exc)
+                stale = cache_get(db, "hot:v2")
+                items = stale or []
+        cached = items
+        if items:
+            cache_set(db, "hot:v2", cached)
+    return [HotItem(**{k: v for k, v in item.items() if k in HotItem.model_fields}) for item in cached]
 
 
 # ----------------------------------------------------------------------------- graphs
+@router.post("/goals/clarify", response_model=ClarifyOut)
+def clarify(payload: ClarifyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ClarifyOut:
+    """One-sentence goal → 2-4 targeted questions (prerequisites, depth, preferences) before generating anything."""
+    try:
+        return clarify_goal(db, get_llm(), user, payload)
+    except LLMError as exc:
+        raise _llm_error(exc) from exc
+
+
 @router.post("/goals", response_model=GraphCreated, status_code=201)
-def create_goal(payload: GoalCreate, db: Session = Depends(get_db)) -> GraphCreated:
-    graph = graph_builder.create_goal_graph(db, payload)
+def create_goal(payload: GoalCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> GraphCreated:
+    graph = graph_builder.create_goal_graph(db, payload, user)
     graph_builder.start_pipeline(graph.id)
     return GraphCreated(graph_id=graph.id, goal_id=graph.goal_id, status=graph.status)
 
 
 @router.get("/graphs", response_model=list[GraphOut])
-def list_graphs(db: Session = Depends(get_db)) -> list[GraphOut]:
-    graphs = db.query(Graph).order_by(Graph.created_at.desc()).limit(30).all()
+def list_graphs(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[GraphOut]:
+    graphs = db.query(Graph).filter(Graph.user_id == user.id).order_by(Graph.created_at.desc()).limit(30).all()
     outs: list[GraphOut] = []
     for graph in graphs:
         progress = GraphProgress(graph)
@@ -198,7 +235,7 @@ def retry_graph(graph_id: str, db: Session = Depends(get_db)) -> GraphCreated:
 @router.get("/graphs/{graph_id}/export.md", response_class=PlainTextResponse)
 def export_graph(graph_id: str, db: Session = Depends(get_db)) -> PlainTextResponse:
     graph = _graph_or_404(db, graph_id)
-    return PlainTextResponse(export_markdown(graph), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="learnway-{graph.id}.md"'})
+    return PlainTextResponse(export_markdown(graph), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="learnpath-{graph.id}.md"'})
 
 
 # ----------------------------------------------------------------------------- nodes
@@ -271,7 +308,13 @@ def create_cards(node_id: str, db: Session = Depends(get_db)) -> CardsOut:
 @router.post("/nodes/{node_id}/chat")
 def stream_chat(node_id: str, payload: ChatRequest, db: Session = Depends(get_db)) -> StreamingResponse:
     node = _node_or_404(db, node_id)
-    return _sse(LearningService(db, get_llm()).stream_chat(node, payload.question))
+    service = LearningService(db, get_llm())
+    if payload.mode == "zhida":
+        official = get_official()
+        if not official.configured:
+            raise HTTPException(503, "知乎直答未配置：请设置 ZHIHU_ACCESS_SECRET")
+        return _sse(service.stream_chat_zhida(node, payload.question, official, get_settings().zhida_model))
+    return _sse(service.stream_chat(node, payload.question))
 
 
 @router.post("/nodes/{node_id}/ground", response_model=NodeDetailOut)
