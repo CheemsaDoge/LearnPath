@@ -31,7 +31,9 @@ export function SubChatOverlay({ nodeId, threadId, quote, citations, autoAsk, on
         <MessageSquareQuote size={16} className="mt-0.5 shrink-0 text-brand-600" />
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">针对这句提问 · 临时子会话</div>
-          <div className="mt-0.5 line-clamp-3 text-[13px] leading-5 text-slate-700">「{quote}」</div>
+          <div className="mt-0.5 max-h-20 overflow-y-auto text-[13px] leading-5 text-slate-700 [&_p]:my-0 [&_p]:text-[13px]">
+            <Markdown text={`「${quote}」`} citations={citations} />
+          </div>
         </div>
         <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="关闭">
           <X size={16} />

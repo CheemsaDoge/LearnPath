@@ -18,6 +18,18 @@ interface SelectionState {
   y: number;
 }
 
+/** Turn a DOM selection into clean text: KaTeX renders MathML + HTML twice, so replace each formula with its TeX source. */
+function selectionToText(range: Range): string {
+  const fragment = range.cloneContents();
+  fragment.querySelectorAll(".katex-display, .katex").forEach((el) => {
+    if (el.parentElement?.closest(".katex")) return; // nested: handled by the outer element
+    const tex = el.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim() ?? "";
+    const display = el.classList.contains("katex-display");
+    el.replaceWith(document.createTextNode(tex ? (display ? ` $$${tex}$$ ` : ` $${tex}$ `) : ""));
+  });
+  return (fragment.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 /**
  * 讲解 = 对话：导师分段发言（流式），学习者在同一线程继续追问；划选任意一句可弹出「解释这句 / 提问」，
  * 在叠加的悬浮窗里开一个临时子会话（独立线程，不跳转）。
@@ -107,8 +119,12 @@ export function ConversationTab({ node, onLearned }: { node: NodeDetail; onLearn
   const onMouseUp = useCallback(() => {
     window.setTimeout(() => {
       const sel = window.getSelection();
-      const text = sel?.toString().replace(/\s+/g, " ").trim() ?? "";
-      if (!sel || sel.isCollapsed || text.length < 4 || !containerRef.current || !containerRef.current.contains(sel.anchorNode)) {
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !containerRef.current || !containerRef.current.contains(sel.anchorNode)) {
+        setSelection(null);
+        return;
+      }
+      const text = selectionToText(sel.getRangeAt(0));
+      if (text.length < 4) {
         setSelection(null);
         return;
       }
