@@ -235,19 +235,24 @@ class LearningService:
         return deck
 
     # ------------------------------------------------------------------ chat
-    def stream_chat(self, node: Node, question: str) -> Iterator[dict[str, Any]]:
+    def _lesson_excerpt(self, node: Node, limit: int = 3500) -> str:
+        lesson = self.latest_lesson(node)
+        return (lesson.content_md or "")[:limit] if lesson else ""
+
+    def stream_chat(self, node: Node, question: str, thread_id: str = "main", quote: str = "") -> Iterator[dict[str, Any]]:
         ctx = self._ctx(node)
-        history = self.db.query(ChatMessage).filter(ChatMessage.node_id == node.id).order_by(ChatMessage.created_at.asc()).all()[-MAX_CHAT_HISTORY:]
+        history = self.db.query(ChatMessage).filter(ChatMessage.node_id == node.id, ChatMessage.thread_id == thread_id).order_by(ChatMessage.created_at.asc()).all()[-MAX_CHAT_HISTORY:]
         messages = [{"role": m.role, "content": m.content} for m in history]
         if messages and messages[0]["role"] != "user":
             messages = messages[1:]
         messages.append({"role": "user", "content": f"学习者提问：{question.strip()}"})
-        user_msg = ChatMessage(node_id=node.id, role="user", content=question.strip())
+        quote = quote.strip()[:600]
+        user_msg = ChatMessage(node_id=node.id, thread_id=thread_id, quote=quote, role="user", content=question.strip())
         self.db.add(user_msg)
         self.db.commit()
-        yield {"citations": ctx["citations"], "message_id": user_msg.id}
+        yield {"citations": ctx["citations"], "message_id": user_msg.id, "thread_id": thread_id}
         chunks: list[str] = []
-        system_prompt = build_chat_system(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"])
+        system_prompt = build_chat_system(node, ctx["parent_label"], ctx["learner_profile"], ctx["goal_text"], ctx["context"], self._lesson_excerpt(node), quote)
         for attempt in range(3):
             try:
                 for delta in self.llm.stream(system=system_prompt, messages=messages, max_tokens=2500):
@@ -263,29 +268,31 @@ class LearningService:
                     break
                 yield {"status": f"模型响应波动，正在重试（{attempt + 2}/3）…"}
         answer = "".join(chunks).strip()
-        reply = ChatMessage(node_id=node.id, role="assistant", content=answer)
+        reply = ChatMessage(node_id=node.id, thread_id=thread_id, quote=quote, role="assistant", content=answer)
         self.db.add(reply)
-        self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200]}))
+        self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200], "thread": thread_id, "quote": quote[:120]}))
         self.db.commit()
-        self._after_chat(node, question)
-        yield {"done": True, "message_id": reply.id}
+        self._after_chat(node, question, quote)
+        yield {"done": True, "message_id": reply.id, "thread_id": thread_id}
 
 
-    def _after_chat(self, node: Node, question: str) -> None:
+    def _after_chat(self, node: Node, question: str, quote: str = "") -> None:
         user_id = node.graph.user_id
-        profile_service.record_event(self.db, user_id, "chat", f"在「{node.label}」提问：{question.strip()[:80]}", "node", node.id)
+        where = f"在「{node.label}」针对“{quote[:30]}…”提问" if quote else f"在「{node.label}」提问"
+        profile_service.record_event(self.db, user_id, "chat", f"{where}：{question.strip()[:80]}", "node", node.id, {"quote": quote[:200]})
         profile_service.extract_facts(user_id, f"学习者在学习「{node.label}」时说：{question.strip()}", "chat", context=f"知识点：{node.label}")
 
-    def stream_chat_zhida(self, node: Node, question: str, official, model: str) -> Iterator[dict[str, Any]]:
+    def stream_chat_zhida(self, node: Node, question: str, official, model: str, thread_id: str = "main", quote: str = "") -> Iterator[dict[str, Any]]:
         """Answer through 知乎直答 (the platform's own RAG answer engine), scoped to this node's topic."""
         from app.zhihu.official import OpenPlatformError
 
         ctx = self._ctx(node)
-        user_msg = ChatMessage(node_id=node.id, role="user", content=question.strip())
+        quote = quote.strip()[:600]
+        user_msg = ChatMessage(node_id=node.id, thread_id=thread_id, quote=quote, role="user", content=question.strip())
         self.db.add(user_msg)
         self.db.commit()
-        yield {"citations": ctx["citations"], "message_id": user_msg.id, "engine": "zhida"}
-        prompt = f"我正在学习「{node.label}」（{node.description[:120]}）。{question.strip()}"
+        yield {"citations": ctx["citations"], "message_id": user_msg.id, "engine": "zhida", "thread_id": thread_id}
+        prompt = f"我正在学习「{node.label}」（{node.description[:120]}）。" + (f"我在讲解里看到这句话：「{quote}」。" if quote else "") + question.strip()
         chunks: list[str] = []
         try:
             for delta in official.zhida_stream([{"role": "user", "content": prompt}], model=model):
@@ -297,12 +304,12 @@ class LearningService:
         except OpenPlatformError as exc:
             raise LLMError(str(exc)) from exc
         answer = "".join(chunks).strip()
-        reply = ChatMessage(node_id=node.id, role="assistant", content=answer)
+        reply = ChatMessage(node_id=node.id, thread_id=thread_id, quote=quote, role="assistant", content=answer)
         self.db.add(reply)
-        self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200], "engine": "zhida"}))
+        self.db.add(Evidence(node_id=node.id, kind="chat", score=0.0, detail={"question": question.strip()[:200], "engine": "zhida", "thread": thread_id}))
         self.db.commit()
-        self._after_chat(node, question)
-        yield {"done": True, "message_id": reply.id}
+        self._after_chat(node, question, quote)
+        yield {"done": True, "message_id": reply.id, "thread_id": thread_id}
 
 
 # ---------------------------------------------------------------------- export

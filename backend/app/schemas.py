@@ -286,6 +286,8 @@ class LessonOut(ORMModel):
 
 class ChatMessageOut(ORMModel):
     id: str
+    thread_id: str = "main"
+    quote: str = ""
     role: str
     content: str
     created_at: datetime
@@ -351,6 +353,8 @@ class CardsOut(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     mode: Literal["tutor", "zhida"] = "tutor"  # tutor = LearnPath 导师（引用本节点来源）；zhida = 知乎直答
+    thread_id: str = Field(default="main", min_length=1, max_length=48, pattern=r"^[A-Za-z0-9_-]+$")  # "main" 或划选子会话的线程 id
+    quote: str = Field(default="", max_length=600)  # 子会话锚定的原句
 
 
 class HotItem(BaseModel):

@@ -1,4 +1,4 @@
-import type { Attachment, AuthStatus, Card, ClarifyOut, ClarifyAnswer, Dashboard, FactKind, Graph, GoalInput, Health, HotItem, Me, NodeDetail, ProfileFact, Quiz, QuizResult } from "./types";
+import type { Attachment, AuthStatus, Card, ChatMessage, ClarifyOut, ClarifyAnswer, Dashboard, FactKind, Graph, GoalInput, Health, HotItem, Me, NodeDetail, ProfileFact, Quiz, QuizResult } from "./types";
 
 const BASE = "/api";
 
@@ -92,6 +92,7 @@ export const api = {
   submitQuiz: (quizId: string, answers: Record<string, unknown>) => request<QuizResult>(`/quizzes/${quizId}/submit`, { method: "POST", body: JSON.stringify({ answers }) }),
   createCards: (nodeId: string) => request<{ node_id: string; cards: Card[] }>(`/nodes/${nodeId}/cards`, { method: "POST" }),
   regroundNode: (nodeId: string) => request<NodeDetail>(`/nodes/${nodeId}/ground`, { method: "POST" }),
+  threadMessages: (nodeId: string, threadId: string) => request<ChatMessage[]>(`/nodes/${nodeId}/threads/${threadId}`),
 };
 
 export interface StreamHandlers {

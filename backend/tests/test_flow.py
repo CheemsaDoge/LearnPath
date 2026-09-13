@@ -67,9 +67,15 @@ def test_end_to_end_learning_flow(client, fake_search):
     cards = client.post(f"/api/nodes/{node_id}/cards").json()
     assert len(cards["cards"]) >= 3
     events = _sse_events(client.post(f"/api/nodes/{node_id}/chat", json={"question": "为什么需要注意力机制？"}))
-    assert events[-1]["done"] is True
+    assert events[-1]["done"] is True and events[-1]["thread_id"] == "main"
+    # a selection-anchored sub-conversation lives in its own thread and never leaks into the main thread
+    sub = _sse_events(client.post(f"/api/nodes/{node_id}/chat", json={"question": "这句话什么意思？", "thread_id": "sel_abc123", "quote": "把它想象成一个熟悉的生活场景"}))
+    assert sub[-1]["done"] is True and sub[-1]["thread_id"] == "sel_abc123"
     detail = client.get(f"/api/nodes/{node_id}").json()
     assert [m["role"] for m in detail["chat"]] == ["user", "assistant"]
+    thread = client.get(f"/api/nodes/{node_id}/threads/sel_abc123").json()
+    assert [m["role"] for m in thread] == ["user", "assistant"] and thread[0]["quote"].startswith("把它想象成")
+    assert client.post(f"/api/nodes/{node_id}/chat", json={"question": "x", "thread_id": "bad id!"}).status_code == 422
     assert any(e["kind"] == "quiz" for e in detail["evidence"])
 
     md = client.get(f"/api/graphs/{created['graph_id']}/export.md").text

@@ -100,6 +100,8 @@ export interface Evidence {
 
 export interface ChatMessage {
   id: string;
+  thread_id?: string;
+  quote?: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;

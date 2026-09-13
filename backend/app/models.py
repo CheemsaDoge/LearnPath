@@ -173,10 +173,15 @@ class Evidence(Base):
 
 
 class ChatMessage(Base):
+    """A turn in a node conversation. ``thread_id`` = "main" for the lesson thread; selection-anchored
+    sub-conversations get their own thread id and carry the quoted sentence."""
+
     __tablename__ = "chat_messages"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("m_"))
     node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id"), index=True)
+    thread_id: Mapped[str] = mapped_column(String(48), default="main", index=True)
+    quote: Mapped[str] = mapped_column(Text, default="")
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

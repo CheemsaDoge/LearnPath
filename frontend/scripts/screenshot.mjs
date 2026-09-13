@@ -66,8 +66,8 @@ await page.locator("button", { hasText: "卡片 1" }).click();
 await page.waitForTimeout(500);
 await shot("09-cards");
 
-await page.getByRole("button", { name: /追问/ }).click();
-await page.fill("input[placeholder*='问一个']", "为什么需要注意力机制？");
+await page.getByRole("button", { name: /讲解对话/ }).click();
+await page.fill("input[placeholder*='接着问导师']", "为什么需要注意力机制？");
 await page.keyboard.press("Enter");
 await page.waitForTimeout(4000);
 await shot("10-chat");

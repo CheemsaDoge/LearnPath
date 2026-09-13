@@ -1,23 +1,21 @@
-import { BookOpen, ClipboardList, Layers, Link2, Loader2, Lock, MessageCircle, X } from "lucide-react";
+import { BookOpen, ClipboardList, Layers, Link2, Loader2, Lock, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, plainMath } from "../../lib/api";
 import type { NodeDetail, QuizResult } from "../../lib/types";
 import { Markdown } from "../Markdown";
 import { Stars } from "../Stars";
 import { CardsTab } from "./CardsTab";
-import { ChatTab } from "./ChatTab";
-import { LessonTab } from "./LessonTab";
+import { ConversationTab } from "./ConversationTab";
 import { QuizTab } from "./QuizTab";
 import { SourcesTab } from "./SourcesTab";
 
-type Tab = "lesson" | "sources" | "quiz" | "cards" | "chat";
+type Tab = "lesson" | "sources" | "quiz" | "cards";
 
 const TABS: { id: Tab; label: string; icon: typeof BookOpen }[] = [
-  { id: "lesson", label: "讲解", icon: BookOpen },
+  { id: "lesson", label: "讲解对话", icon: BookOpen },
   { id: "sources", label: "知乎来源", icon: Link2 },
   { id: "quiz", label: "小测验", icon: ClipboardList },
   { id: "cards", label: "复习卡片", icon: Layers },
-  { id: "chat", label: "追问", icon: MessageCircle },
 ];
 
 export function NodePanel({ nodeId, onClose, onChanged, onNavigate }: { nodeId: string; onClose: () => void; onChanged: () => void; onNavigate: (id: string) => void }) {
@@ -113,11 +111,10 @@ export function NodePanel({ nodeId, onClose, onChanged, onNavigate }: { nodeId: 
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {tab === "lesson" && <LessonTab node={node} onLearned={refresh} />}
+        {tab === "lesson" && <ConversationTab node={node} onLearned={refresh} />}
         {tab === "sources" && <SourcesTab node={node} onUpdated={(n) => { setNode(n); onChanged(); }} />}
         {tab === "quiz" && <QuizTab node={node} onGraded={onGraded} />}
         {tab === "cards" && <CardsTab node={node} />}
-        {tab === "chat" && <ChatTab node={node} onAsked={refresh} />}
       </div>
     </div>
   );

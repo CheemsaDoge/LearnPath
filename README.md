@@ -21,7 +21,8 @@
 2. **先问清楚再规划** —— AI 主动追问 2-4 个关键问题（前置知识、目标深度、学习偏好），选项可点选也可自己说明；可附上课程大纲、考试范围等附件。
 3. **生成知识图谱** —— 把目标拆成模块 → 知识点，标出前置关系、难度和预计时长，画成可视化图谱。
 4. **知乎来源锚定** —— 每个知识点通过知乎数据开放平台检索高赞回答与专栏，作为讲解和出题的**证据**。
-5. **带引用的讲解** —— 定义 → 直觉 → 要点 → 误区 → **知乎观点对照** → 自检，每句话都能点回原文，公式 KaTeX 渲染。
+5. **对话式讲解** —— 导师一段段讲（定义 → 直觉 → 要点 → 误区 → **知乎观点对照** → 自检），每句话都能点回原文，公式 KaTeX 渲染；讲到一半可以随时插话追问（导师 / 知乎直答双引擎）。
+5a. **划选追问** —— 在讲解里划选任意一句，弹出「解释这句 / 提问」，在叠加的悬浮窗里开一个临时子会话（独立线程、不跳转），针对这一句深挖。
 6. **证据驱动的掌握度** —— 3 道单选 + 1 道费曼解释题（AI 评分），形成证据链，更新 ★☆☆ 星级。
 7. **推荐下一步** —— 按前置关系、掌握度和时间预算推荐「现在最值得学的知识点」。
 8. **一键沉淀** —— 复习卡片、追问答疑（导师 / 知乎直答双引擎）、导出 Markdown 学习清单。
@@ -52,9 +53,13 @@
 | --- | --- |
 | ![测验](docs/screenshots/08-quiz-result.png) | ![卡片](docs/screenshots/09-cards.png) |
 
-| 目标澄清追问 | 公式渲染的讲解（真实 LLM + 官方知乎来源） |
+| 目标澄清追问 | 对话式讲解（真实 LLM + 官方知乎来源） |
 | --- | --- |
-| ![澄清](docs/screenshots/12-clarify.png) | ![讲解](docs/screenshots/14-lesson-math.png) |
+| ![澄清](docs/screenshots/12-clarify.png) | ![讲解](docs/screenshots/19-conversation.png) |
+
+| 划选一句 → 「解释这句 / 提问」 | 悬浮子会话（独立线程，不跳转） |
+| --- | --- |
+| ![划选](docs/screenshots/20-selection-popover.png) | ![子会话](docs/screenshots/21-subchat-overlay.png) |
 
 | 控制台 · 学习档案 | 控制台 · 档案馆 | 知乎登录 |
 | --- | --- | --- |
@@ -160,7 +165,8 @@ backend/   FastAPI + SQLAlchemy(SQLite WAL) + Anthropic SDK
 | POST | `/api/nodes/{id}/lesson` | SSE 流式讲解（带引用） |
 | POST | `/api/nodes/{id}/quiz` → `/api/quizzes/{id}/submit` | 出题与评分，更新掌握度 |
 | POST | `/api/nodes/{id}/cards` | 复习卡片 |
-| POST | `/api/nodes/{id}/chat` | SSE 流式追问，`mode: tutor \| zhida` |
+| POST | `/api/nodes/{id}/chat` | SSE 流式追问，`mode: tutor \| zhida`，`thread_id` + `quote` 开启划选子会话 |
+| GET | `/api/nodes/{id}/threads/{thread_id}` | 某个子会话的消息 |
 | POST | `/api/nodes/{id}/ground` | 重新检索该知识点的知乎来源 |
 | POST | `/api/goals/clarify` | 目标 → 2-4 个追问（前置知识 / 深度 / 偏好） |
 | GET | `/api/me` · `/api/me/dashboard` | 当前学习者（访客或知乎账号）与控制台数据 |

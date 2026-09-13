@@ -55,6 +55,7 @@ def session_factory() -> sessionmaker[Session]:
 _ADDITIVE_COLUMNS = {
     "goals": {"user_id": "VARCHAR(32)", "clarifications": "JSON DEFAULT '[]'", "attachment_ids": "JSON DEFAULT '[]'"},
     "graphs": {"user_id": "VARCHAR(32)"},
+    "chat_messages": {"thread_id": "VARCHAR(48) DEFAULT 'main'", "quote": "TEXT DEFAULT ''"},
 }
 
 

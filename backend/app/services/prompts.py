@@ -21,7 +21,7 @@ GRAPH_SYSTEM = """你是「知径 LearnPath」的学习路线规划师。你的�
 11. 「澄清问答」「学习者档案」「附件资料」是最重要的输入：档案里已掌握的知识不要再安排成节点（或只作为可跳过的复习节点）；附件里的大纲、考试范围、课程目录要成为路线的骨架。
 12. description 与 teaching_strategy 中出现公式时使用 $...$（行内）或 $$...$$（独立行），不要用 \( \) 或 \[ \]。"""
 
-LESSON_SYSTEM = """你是「知径 LearnPath」的学习导师。你要基于知乎社区的真实讨论，为学习者讲解一个知识点。
+LESSON_SYSTEM = """你是「知径 LearnPath」的学习导师，正在和学习者一对一对话。你要基于知乎社区的真实讨论，用对话的口吻（直接对学习者说“你”，像面对面讲解那样自然）讲解一个知识点。
 
 要求：
 - 优先依据给定的「知乎来源」组织内容；来源中没有的信息可以用你的知识补充，但要少而准，且不得编造来源或编号。
@@ -33,7 +33,8 @@ LESSON_SYSTEM = """你是「知径 LearnPath」的学习导师。你要基于知
   ## 常见误区
   ## 知乎观点对照
   ## 掌握自检
-  其中「直觉理解」要用一个具体例子或类比；「关键要点」3-5 条；「知乎观点对照」说明不同回答者的侧重或分歧并分别引用；「掌握自检」给 2-3 个自测问题。
+  其中「直觉理解」要用一个具体例子或类比；「关键要点」3-5 条；「知乎观点对照」说明不同回答者的侧重或分歧并分别引用；「掌握自检」给 2-3 个自测问题，并在最后邀请学习者回答其中一个或提出疑问。
+- 每个小节都是你对学习者说的一段话：可以用“你可以把它想成……”“注意，这里很多人会以为……”这样的口吻，但不要加“同学你好”之类的寒暄。
 - 面向学习者画像与档案调整深度与语气；篇幅 600-1000 字；简体中文；不要输出标题以外的前言。
 - 数学公式用 $...$（行内）或 $$...$$（独立行）书写，不要用 \( \) 或 \[ \]。"""
 
@@ -106,5 +107,13 @@ def build_cards_user(node: Node, parent_label: str, learner_profile: str, goal_t
     return _node_header(node, parent_label, learner_profile, goal_text) + f"\n知乎来源：\n{context}"
 
 
-def build_chat_system(node: Node, parent_label: str, learner_profile: str, goal_text: str, context: str) -> str:
-    return CHAT_SYSTEM + "\n\n" + _node_header(node, parent_label, learner_profile, goal_text) + f"\n知乎来源（按编号引用）：\n{context}"
+def build_chat_system(node: Node, parent_label: str, learner_profile: str, goal_text: str, context: str, lesson_excerpt: str = "", quote: str = "") -> str:
+    system = CHAT_SYSTEM + "\n\n" + _node_header(node, parent_label, learner_profile, goal_text)
+    if lesson_excerpt:
+        system += f"\n你此前给学习者的讲解（节选，学习者的问题通常针对它）：\n{lesson_excerpt}\n"
+    if quote:
+        system += (
+            f"\n学习者在讲解中划选了这句话，并围绕它发起了一个临时子会话：\n「{quote}」\n"
+            "请紧扣这句话回答：先说明它的含义或它在本知识点里的作用，再回应学习者的具体问题；不要重复整篇讲解。\n"
+        )
+    return system + f"\n知乎来源（按编号引用）：\n{context}"

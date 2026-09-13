@@ -252,7 +252,7 @@ def node_detail(node_id: str, db: Session = Depends(get_db)) -> NodeDetailOut:
         sources.append(s)
     lesson = service.latest_lesson(node)
     deck = service.latest_cards(node)
-    chat = db.query(ChatMessage).filter(ChatMessage.node_id == node.id).order_by(ChatMessage.created_at.asc()).all()
+    chat = db.query(ChatMessage).filter(ChatMessage.node_id == node.id, ChatMessage.thread_id == "main").order_by(ChatMessage.created_at.asc()).all()
     return NodeDetailOut(
         **base.model_dump(),
         teaching_strategy=node.teaching_strategy,
@@ -313,8 +313,16 @@ def stream_chat(node_id: str, payload: ChatRequest, db: Session = Depends(get_db
         official = get_official()
         if not official.configured:
             raise HTTPException(503, "知乎直答未配置：请设置 ZHIHU_ACCESS_SECRET")
-        return _sse(service.stream_chat_zhida(node, payload.question, official, get_settings().zhida_model))
-    return _sse(service.stream_chat(node, payload.question))
+        return _sse(service.stream_chat_zhida(node, payload.question, official, get_settings().zhida_model, payload.thread_id, payload.quote))
+    return _sse(service.stream_chat(node, payload.question, payload.thread_id, payload.quote))
+
+
+@router.get("/nodes/{node_id}/threads/{thread_id}", response_model=list[ChatMessageOut])
+def thread_messages(node_id: str, thread_id: str, db: Session = Depends(get_db)) -> list[ChatMessageOut]:
+    """Messages of one selection-anchored sub-conversation."""
+    _node_or_404(db, node_id)
+    rows = db.query(ChatMessage).filter(ChatMessage.node_id == node_id, ChatMessage.thread_id == thread_id).order_by(ChatMessage.created_at.asc()).all()
+    return [ChatMessageOut.model_validate(m) for m in rows]
 
 
 @router.post("/nodes/{node_id}/ground", response_model=NodeDetailOut)
